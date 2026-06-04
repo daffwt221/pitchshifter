@@ -1,0 +1,10 @@
+# Build / packaging
+*.zip
+*.xpi
+web-ext-artifacts/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
