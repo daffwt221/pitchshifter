@@ -50,6 +50,10 @@ Temporary add-ons are removed on browser restart. To keep it installed, package 
 - Pitch engine: [SoundTouch JS](https://github.com/cutterbl/SoundTouchJS) by Olli Parviainen et al., GNU LGPL-2.1. The DSP classes are vendored into `injected.js` with the license header intact.
 - UI typeface: [IBM Plex Sans](https://github.com/IBM/plex), SIL Open Font License 1.1 (see `popup/fonts/OFL.txt`). Bundled as a latin subset.
 
+## License
+
+This project's own code is [MIT](LICENSE). Bundled components keep their own licenses: SoundTouch JS (LGPL-2.1) and IBM Plex Sans (SIL OFL-1.1) — see Credits.
+
 ## Files
 
 | File | Role |
