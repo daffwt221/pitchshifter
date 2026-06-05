@@ -24,6 +24,7 @@
   const BUFSZ = 8192;    // ring buffer, power of two, > 4*N
   const MASK = BUFSZ - 1;
   const TP = 2 * Math.PI;
+  const HEADROOM = 0.9;  // small margin so peaks don't reach the limiter
 
   // In-place iterative radix-2 Cooley-Tukey FFT (separate real/imag arrays).
   function fft(re, im, inverse) {
@@ -69,6 +70,7 @@
       oFreq: new Float32Array((N >> 1) + 1),
       inBuf: new Float32Array(BUFSZ),
       outBuf: new Float32Array(BUFSZ),
+      winSum: new Float32Array(BUFSZ),
       phaseIn: new Float32Array((N >> 1) + 1),
       phaseAcc: new Float32Array((N >> 1) + 1),
       inW: 0, inR: 0, outW: 0, outR: 0,
@@ -78,7 +80,7 @@
   }
 
   function pvFrame(pv, pf) {
-    const { win, re, im, oRe, oIm, oMag, oFreq, inBuf, outBuf, phaseIn, phaseAcc } = pv;
+    const { win, re, im, oRe, oIm, oMag, oFreq, inBuf, outBuf, winSum, phaseIn, phaseAcc } = pv;
     const halfN = N >> 1;
 
     for (let k = 0; k < N; k++) { re[k] = inBuf[(pv.inR + k) & MASK] * win[k]; im[k] = 0; }
@@ -110,7 +112,15 @@
 
     fft(oRe, oIm, true);
 
-    for (let k = 0; k < N; k++) outBuf[(pv.outW + k) & MASK] += oRe[k] * win[k] * 2;
+    // Synthesis window + overlap-add, tracking the running window-product sum
+    // so the read step can divide by it (COLA normalization). This gives a
+    // consistent output level for any pitch factor — no clipping, no volume
+    // jumps — instead of relying on a hand-tuned gain constant.
+    for (let k = 0; k < N; k++) {
+      const idx = (pv.outW + k) & MASK;
+      outBuf[idx] += oRe[k] * win[k];
+      winSum[idx] += win[k] * win[k];
+    }
 
     pv.inR += HOP;
     pv.outW += HOP;
@@ -132,7 +142,7 @@
     if (!pv.ready) {
       if (pv.inW < 2 * N) { out.fill(0); return; }
       pv.inR = 0; pv.outW = 0; pv.hopCount = 0;
-      pv.phaseIn.fill(0); pv.phaseAcc.fill(0); pv.outBuf.fill(0);
+      pv.phaseIn.fill(0); pv.phaseAcc.fill(0); pv.outBuf.fill(0); pv.winSum.fill(0);
       for (let g = 0; g < N / HOP; g++) pvFrame(pv, pf);
       pv.outR = N - HOP;
       pv.ready = true;
@@ -143,8 +153,11 @@
 
     for (let i = 0; i < n; i++) {
       const pos = (pv.outR + i) & MASK;
-      out[i] = Math.max(-1, Math.min(1, pv.outBuf[pos]));
+      const ws = pv.winSum[pos];
+      const v = ws > 1e-6 ? (pv.outBuf[pos] / ws) * HEADROOM : 0;
+      out[i] = v > 1 ? 1 : v < -1 ? -1 : v;
       pv.outBuf[pos] = 0;
+      pv.winSum[pos] = 0;
     }
     pv.outR += n;
   }
