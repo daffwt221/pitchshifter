@@ -10,8 +10,9 @@ Click the toolbar icon to open the popup.
 | --- | --- | --- |
 | Pitch | -12 to +12 | 1 semitone |
 | Microtones | -1.00 to +1.00 | 0.01 |
+| Speed | 25% to 200% | 5% |
 
-Total shift is `(pitch + microtones) / 12` octaves. Use the slider, the -/+ buttons, or the reset button to go back to 0. A status line shows whether media was detected on the page.
+Pitch shift is `(pitch + microtones) / 12` octaves and does not change tempo. Speed changes tempo while keeping the pitch (browser time-stretch). Each control has a slider, -/+ buttons, and its own reset button. A status line shows whether media was detected on the page.
 
 ## Install
 
@@ -24,13 +25,14 @@ Temporary add-ons are removed on browser restart. To keep it installed, package 
 ## How it works
 
 - `content.js` injects `injected.js` into the page's main world and relays messages between the popup and the page.
-- `injected.js` captures each media element with the Web Audio API and routes it through a Jungle pitch shifter (delay-line crossfade, algorithm by Chris Wilson) that transposes without changing tempo. At pitch 0 it uses a clean dry path, so the audio is untouched until you move a slider.
-- The popup reads and writes pitch state through the content script.
+- `injected.js` captures each media element with the Web Audio API and routes it through a phase-vocoder pitch shifter (STFT, smbPitchShift by Stephan M. Bernsee) running in an AudioWorklet. It transposes without changing tempo. At pitch 0 it uses a clean dry path, so the audio is untouched until you move a slider. If a page's CSP blocks the worklet, it falls back to a delay-line shifter (Jungle, by Chris Wilson).
+- Speed is applied as the element's `playbackRate` with `preservesPitch` on, so tempo changes but pitch stays put.
+- The popup reads and writes state through the content script.
 
 ## Limitations
 
-- Cross-origin media without CORS headers can't be read by the Web Audio API and is skipped.
-- The Jungle algorithm is tuned for about ±1 octave; extreme settings add mild artifacts.
+- Cross-origin media without CORS headers can't be read by the Web Audio API, so pitch can't be shifted on it (speed still works).
+- The pitch shifter adds latency (~20 ms) and very large shifts add mild artifacts, as expected for real-time processing.
 
 ## Files
 

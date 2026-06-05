@@ -75,6 +75,24 @@ body {
   margin-bottom: 10px;
 }
 
+.panel-reset {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 4px;
+  margin-left: 8px;
+  border-radius: 6px;
+  transition: color 0.15s, background 0.15s;
+}
+
+.panel-reset:hover {
+  color: var(--accent);
+  background: var(--panel-2);
+}
+
 .panel-top {
   display: flex;
   align-items: baseline;

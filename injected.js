@@ -1,15 +1,182 @@
 // injected.js — runs in the PAGE world.
 // Routes every <video>/<audio> element through a pitch shifter and applies the
 // pitch chosen in the popup. Total shift (in octaves) = (pitch + micro) / 12.
+// Speed (playbackRate) is applied directly on the element with pitch preserved.
 (function () {
   if (window.__pitchShifterInjected) return;
   window.__pitchShifterInjected = true;
 
   // =====================================================================
-  // Jungle pitch shifter
+  // High-quality pitch shifter (AudioWorklet, phase vocoder)
+  // STFT analysis/synthesis with phase propagation and spectral bin
+  // remapping (smbPitchShift by Stephan M. Bernsee). Far smoother than a
+  // delay-line shifter for sustained/musical material. Loaded from a Blob
+  // URL; if a page's CSP blocks it we fall back to the Jungle shifter below.
+  // =====================================================================
+  const WORKLET_CODE = `
+class PitchProcessor extends AudioWorkletProcessor {
+  static get parameterDescriptors() {
+    return [{ name: 'pitch', defaultValue: 1, minValue: 0.25, maxValue: 4, automationRate: 'k-rate' }];
+  }
+  constructor() {
+    super();
+    this.fftFrameSize = 1024;
+    this.osamp = 8; // overlap factor — higher = smoother, more CPU
+    this.channels = [];
+  }
+  newChannel() {
+    const F = this.fftFrameSize;
+    return {
+      gInFIFO: new Float32Array(F),
+      gOutFIFO: new Float32Array(F),
+      gFFTworksp: new Float32Array(2 * F),
+      gLastPhase: new Float32Array(F / 2 + 1),
+      gSumPhase: new Float32Array(F / 2 + 1),
+      gOutputAccum: new Float32Array(2 * F),
+      gAnaFreq: new Float32Array(F),
+      gAnaMagn: new Float32Array(F),
+      gSynFreq: new Float32Array(F),
+      gSynMagn: new Float32Array(F),
+      gRover: 0,
+    };
+  }
+  smbFft(buf, n, sign) {
+    let wr, wi, arg, temp, tr, ti, ur, ui, i, bitm, j, le, le2, k, p1r, p1i, p2r, p2i;
+    for (i = 2; i < 2 * n - 2; i += 2) {
+      for (bitm = 2, j = 0; bitm < 2 * n; bitm <<= 1) {
+        if (i & bitm) j++;
+        j <<= 1;
+      }
+      if (i < j) {
+        temp = buf[i]; buf[i] = buf[j]; buf[j] = temp;
+        temp = buf[i + 1]; buf[i + 1] = buf[j + 1]; buf[j + 1] = temp;
+      }
+    }
+    const max = Math.round(Math.log(n) / Math.log(2));
+    for (k = 0, le = 2; k < max; k++) {
+      le <<= 1;
+      le2 = le >> 1;
+      ur = 1.0; ui = 0.0;
+      arg = Math.PI / (le2 >> 1);
+      wr = Math.cos(arg);
+      wi = sign * Math.sin(arg);
+      for (j = 0; j < le2; j += 2) {
+        p1r = j; p1i = p1r + 1;
+        p2r = p1r + le2; p2i = p2r + 1;
+        for (i = j; i < 2 * n; i += le) {
+          tr = buf[p2r] * ur - buf[p2i] * ui;
+          ti = buf[p2r] * ui + buf[p2i] * ur;
+          buf[p2r] = buf[p1r] - tr;
+          buf[p2i] = buf[p1i] - ti;
+          buf[p1r] += tr;
+          buf[p1i] += ti;
+          p1r += le; p1i += le; p2r += le; p2i += le;
+        }
+        tr = ur * wr - ui * wi;
+        ui = ur * wi + ui * wr;
+        ur = tr;
+      }
+    }
+  }
+  shift(ch, pitchShift, indata, outdata, numSamps) {
+    const F = this.fftFrameSize;
+    const osamp = this.osamp;
+    const F2 = F / 2;
+    const stepSize = F / osamp;
+    const freqPerBin = sampleRate / F;
+    const expct = 2 * Math.PI * stepSize / F;
+    const inFifoLatency = F - stepSize;
+    if (ch.gRover === 0) ch.gRover = inFifoLatency;
+    const fifoIn = ch.gInFIFO, fifoOut = ch.gOutFIFO, work = ch.gFFTworksp;
+    const lastPhase = ch.gLastPhase, sumPhase = ch.gSumPhase, accum = ch.gOutputAccum;
+    const anaF = ch.gAnaFreq, anaM = ch.gAnaMagn, synF = ch.gSynFreq, synM = ch.gSynMagn;
+    let magn, phase, tmp, real, imag, qpd, index, k, i, window;
+    for (i = 0; i < numSamps; i++) {
+      fifoIn[ch.gRover] = indata[i];
+      outdata[i] = fifoOut[ch.gRover - inFifoLatency];
+      ch.gRover++;
+      if (ch.gRover >= F) {
+        ch.gRover = inFifoLatency;
+        for (k = 0; k < F; k++) {
+          window = -0.5 * Math.cos(2 * Math.PI * k / F) + 0.5;
+          work[2 * k] = fifoIn[k] * window;
+          work[2 * k + 1] = 0;
+        }
+        this.smbFft(work, F, -1);
+        for (k = 0; k <= F2; k++) {
+          real = work[2 * k];
+          imag = work[2 * k + 1];
+          magn = 2 * Math.sqrt(real * real + imag * imag);
+          phase = Math.atan2(imag, real);
+          tmp = phase - lastPhase[k];
+          lastPhase[k] = phase;
+          tmp -= k * expct;
+          qpd = Math.trunc(tmp / Math.PI);
+          if (qpd >= 0) qpd += qpd & 1;
+          else qpd -= qpd & 1;
+          tmp -= Math.PI * qpd;
+          tmp = osamp * tmp / (2 * Math.PI);
+          tmp = k * freqPerBin + tmp * freqPerBin;
+          anaM[k] = magn;
+          anaF[k] = tmp;
+        }
+        for (k = 0; k <= F2; k++) { synM[k] = 0; synF[k] = 0; }
+        for (k = 0; k <= F2; k++) {
+          index = Math.round(k * pitchShift);
+          if (index <= F2) {
+            synM[index] += anaM[k];
+            synF[index] = anaF[k] * pitchShift;
+          }
+        }
+        for (k = 0; k <= F2; k++) {
+          magn = synM[k];
+          tmp = synF[k];
+          tmp -= k * freqPerBin;
+          tmp /= freqPerBin;
+          tmp = 2 * Math.PI * tmp / osamp;
+          tmp += k * expct;
+          sumPhase[k] += tmp;
+          phase = sumPhase[k];
+          work[2 * k] = magn * Math.cos(phase);
+          work[2 * k + 1] = magn * Math.sin(phase);
+        }
+        for (k = F + 2; k < 2 * F; k++) work[k] = 0;
+        this.smbFft(work, F, 1);
+        for (k = 0; k < F; k++) {
+          window = -0.5 * Math.cos(2 * Math.PI * k / F) + 0.5;
+          accum[k] += 2 * window * work[2 * k] / (F2 * osamp);
+        }
+        for (k = 0; k < stepSize; k++) fifoOut[k] = accum[k];
+        for (k = 0; k < F; k++) accum[k] = accum[k + stepSize];
+        for (k = 0; k < inFifoLatency; k++) fifoIn[k] = fifoIn[k + stepSize];
+      }
+    }
+  }
+  process(inputs, outputs, parameters) {
+    const input = inputs[0];
+    const output = outputs[0];
+    if (!input || input.length === 0) return true;
+    const p = parameters.pitch;
+    const pitchShift = p.length > 0 ? p[0] : 1;
+    for (let c = 0; c < output.length; c++) {
+      const inCh = input[c] || input[input.length - 1];
+      const outCh = output[c];
+      if (!inCh) { outCh.fill(0); continue; }
+      if (!this.channels[c]) this.channels[c] = this.newChannel();
+      this.shift(this.channels[c], pitchShift, inCh, outCh, outCh.length);
+    }
+    return true;
+  }
+}
+registerProcessor('pitch-processor', PitchProcessor);
+`;
+
+  // =====================================================================
+  // Jungle pitch shifter (fallback)
   // Real-time pitch shift using two crossfaded, delay-modulated lines.
   // Shifts pitch up to ~±1 octave without changing tempo.
   // Algorithm by Chris Wilson (Web Audio API demos), adapted here.
+  // Used only when the AudioWorklet above can't load (e.g. strict CSP).
   // =====================================================================
   const delayTime = 0.1;
   const fadeTime = 0.05;
@@ -141,7 +308,6 @@
     this.modGain2.gain.setTargetAtTime(0.5 * t, this.context.currentTime, 0.01);
   };
 
-  // mult in [-1, 1] => roughly [-1 octave, +1 octave]
   Jungle.prototype.setPitchOffset = function (mult) {
     if (mult > 0) {
       this.mod1Gain.gain.value = 0;
@@ -161,12 +327,16 @@
   // Pitch shifter wiring / state
   // =====================================================================
   let ctx = null;
-  const wired = new Map(); // mediaEl -> { source, jungle, dry, wet }
+  let workletReady = null;
+  let useWorklet = false;
+  const wired = new Map(); // mediaEl -> { source, shifter, dry, wet }
   let curPitch = 0;
   let curMicro = 0;
+  let curSpeed = 1;
   let lastHasMedia = null;
 
   const mult = () => (curPitch + curMicro) / 12;
+  const ratio = () => Math.pow(2, mult());
   const isActive = () => Math.abs(mult()) > 1e-6;
 
   function ensureCtx() {
@@ -178,11 +348,82 @@
     return ctx;
   }
 
+  // Load the phase-vocoder worklet once. On failure (no support / CSP) we keep
+  // useWorklet = false and the shifter falls back to Jungle.
+  function ensureWorklet() {
+    if (workletReady) return workletReady;
+    workletReady = (async () => {
+      try {
+        if (!ctx || !ctx.audioWorklet) throw new Error("no audioWorklet");
+        const blob = new Blob([WORKLET_CODE], { type: "application/javascript" });
+        const url = URL.createObjectURL(blob);
+        await ctx.audioWorklet.addModule(url);
+        URL.revokeObjectURL(url);
+        useWorklet = true;
+      } catch (e) {
+        useWorklet = false;
+      }
+    })();
+    return workletReady;
+  }
+
   function getMedia() {
     return Array.from(document.querySelectorAll("video, audio"));
   }
 
-  // Route one media element: source -> [dry, jungle->wet] -> destination.
+  // Speed = native playback rate with pitch preserved (browser time-stretch).
+  // Independent of the pitch shifter, so it stays high quality on its own.
+  function applySpeed() {
+    getMedia().forEach((el) => {
+      try {
+        el.preservesPitch = true;
+        el.mozPreservesPitch = true;
+        el.webkitPreservesPitch = true;
+        if (el.playbackRate !== curSpeed) el.playbackRate = curSpeed;
+      } catch (e) {}
+    });
+  }
+
+  // Build a shifter node: phase-vocoder worklet if available, else Jungle.
+  function makeShifter() {
+    if (useWorklet) {
+      let node = null;
+      try {
+        node = new AudioWorkletNode(ctx, "pitch-processor", {
+          numberOfInputs: 1,
+          numberOfOutputs: 1,
+          outputChannelCount: [2],
+          channelCount: 2,
+          channelCountMode: "explicit",
+          channelInterpretation: "speakers",
+        });
+      } catch (e) {
+        node = null;
+      }
+      if (node) {
+        const param = node.parameters.get("pitch");
+        return {
+          input: node,
+          output: node,
+          setPitch: () => {
+            try {
+              param.setTargetAtTime(ratio(), ctx.currentTime, 0.01);
+            } catch (e) {
+              param.value = ratio();
+            }
+          },
+        };
+      }
+    }
+    const jungle = new Jungle(ctx);
+    return {
+      input: jungle.input,
+      output: jungle.output,
+      setPitch: () => jungle.setPitchOffset(mult()),
+    };
+  }
+
+  // Route one media element: source -> [dry, shifter->wet] -> destination.
   // Dry path keeps the audio pristine when pitch is 0 (true bypass).
   function wire(el) {
     if (wired.has(el)) return wired.get(el);
@@ -193,29 +434,32 @@
       // Already captured by something else, or cross-origin without CORS.
       return null;
     }
-    const jungle = new Jungle(ctx);
+    const shifter = makeShifter();
     const dry = ctx.createGain();
     const wet = ctx.createGain();
     source.connect(dry);
-    source.connect(jungle.input);
-    jungle.output.connect(wet);
+    source.connect(shifter.input);
+    shifter.output.connect(wet);
     dry.connect(ctx.destination);
     wet.connect(ctx.destination);
-    const node = { source, jungle, dry, wet };
+    const node = { source, shifter, dry, wet };
     wired.set(el, node);
     return node;
   }
 
   function applyNode(node) {
-    node.jungle.setPitchOffset(mult());
+    node.shifter.setPitch();
     const a = isActive();
-    node.dry.gain.value = a ? 0 : 1;
-    node.wet.gain.value = a ? 1 : 0;
+    const now = ctx.currentTime;
+    node.dry.gain.setTargetAtTime(a ? 0 : 1, now, 0.01);
+    node.wet.gain.setTargetAtTime(a ? 1 : 0, now, 0.01);
   }
 
-  function apply() {
+  async function apply() {
+    applySpeed();
     if (isActive()) {
       ensureCtx();
+      await ensureWorklet();
       getMedia().forEach(wire);
     }
     wired.forEach(applyNode);
@@ -229,6 +473,7 @@
         hasMedia: getMedia().length > 0,
         pitch: curPitch,
         micro: curMicro,
+        speed: curSpeed,
       },
       "*"
     );
@@ -242,6 +487,7 @@
     if (d.type === "setPitch") {
       curPitch = Number(d.pitch) || 0;
       curMicro = Number(d.micro) || 0;
+      curSpeed = Number(d.speed) || 1;
       apply();
       postState();
     } else if (d.type === "getState") {
@@ -255,10 +501,13 @@
     if (moTimer) return;
     moTimer = setTimeout(() => {
       moTimer = null;
+      applySpeed();
       if (isActive()) {
         ensureCtx();
-        getMedia().forEach(wire);
-        wired.forEach(applyNode);
+        ensureWorklet().then(() => {
+          getMedia().forEach(wire);
+          wired.forEach(applyNode);
+        });
       }
       const has = getMedia().length > 0;
       if (has !== lastHasMedia) {

@@ -8,7 +8,7 @@
 const api = typeof browser !== "undefined" ? browser : chrome;
 
 // Last known state reported by the page world, so the popup can read it instantly.
-let cachedState = { hasMedia: false, pitch: 0, micro: 0 };
+let cachedState = { hasMedia: false, pitch: 0, micro: 0, speed: 1 };
 
 // --- Inject the page-world script ---------------------------------------------
 function inject() {
@@ -30,7 +30,7 @@ window.addEventListener("message", (ev) => {
   if (!d || d.source !== "pitchshifter-page") return;
 
   if (d.type === "state") {
-    cachedState = { hasMedia: d.hasMedia, pitch: d.pitch, micro: d.micro };
+    cachedState = { hasMedia: d.hasMedia, pitch: d.pitch, micro: d.micro, speed: d.speed };
     // Push live to the popup if it happens to be open (frames with media can
     // report here even when the top frame has none, e.g. embedded players).
     api.runtime.sendMessage({ type: "stateUpdate", ...cachedState }).catch(() => {});
@@ -52,8 +52,9 @@ api.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "setPitch") {
     cachedState.pitch = msg.pitch;
     cachedState.micro = msg.micro;
+    cachedState.speed = msg.speed;
     window.postMessage(
-      { source: "pitchshifter-cs", type: "setPitch", pitch: msg.pitch, micro: msg.micro },
+      { source: "pitchshifter-cs", type: "setPitch", pitch: msg.pitch, micro: msg.micro, speed: msg.speed },
       "*"
     );
     sendResponse({ ok: true });
