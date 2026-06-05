@@ -641,7 +641,11 @@
       fifoFrames -= emit;
     };
 
-    return { node, setPitch(pf) { if (pf !== curPF) { curPF = pf; st.pitch = pf; } } };
+    return {
+      node,
+      setPitch(pf) { if (pf !== curPF) { curPF = pf; st.pitch = pf; } },
+      reset() { try { st.clear(); } catch (e) {} fifoFrames = 0; primed = false; },
+    };
   }
 
   // =====================================================================
@@ -695,15 +699,33 @@
       return null;
     }
     const shifter = createShifter(ctx);
-    source.connect(shifter.node);
-    shifter.node.connect(ctx.destination);
-    const node = { source, shifter };
+    const node = { source, shifter, routed: null };
+    route(node);
     wired.set(el, node);
     return node;
   }
 
+  // When neutral (pitch 0), route the element straight to the output so the
+  // shifter and its latency are completely out of the path — exactly as if the
+  // effect were off. The shifter is only inserted while actually pitch-shifting.
+  function route(node) {
+    const active = isActive();
+    if (node.routed === active) return;
+    node.routed = active;
+    try { node.source.disconnect(); } catch (e) {}
+    try { node.shifter.node.disconnect(); } catch (e) {}
+    if (active) {
+      node.shifter.reset();
+      node.source.connect(node.shifter.node);
+      node.shifter.node.connect(ctx.destination);
+    } else {
+      node.source.connect(ctx.destination);
+    }
+  }
+
   function applyNode(node) {
     node.shifter.setPitch(ratio());
+    route(node);
   }
 
   function apply() {
