@@ -20,14 +20,21 @@
 :root {
   --bg: #f2f3f4;
   --surface: #ffffff;
-  --line: #dcdfe2;        /* hairlines / card borders */
-  --line-2: #c2c6ca;      /* control borders */
-  --text: #1f2225;        /* primary text + values */
-  --text-2: #565c62;      /* control labels */
-  --text-3: #8b9197;      /* dim / status */
-  --accent: #c2820f;      /* single accent: slider fill */
-  --track: #e4e6e8;       /* slider track (unfilled) */
-  --ok: #1d7a33;          /* media-detected dot */
+  --line: #dcdfe2;          /* hairlines / card borders */
+  --line-2: #c2c6ca;        /* control borders */
+  --text: #1f2225;          /* primary text + values */
+  --text-2: #565c62;        /* control labels */
+  --text-3: #8b9197;        /* dim / status */
+  --accent: #c2820f;        /* single accent: slider fill */
+  --track: #e4e6e8;         /* slider track (unfilled) */
+  --ok: #1d7a33;            /* media-detected dot */
+
+  --btn: #f6f7f8;
+  --btn-hover: #eceef0;
+  --btn-active: #e0e3e5;
+  --btn-border-hover: #aab0b5;
+  --thumb: #ffffff;
+  --thumb-border: #80868b;
 
   --s1: 4px;
   --s2: 8px;
@@ -35,6 +42,29 @@
   --r: 2px;
 
   --font: "IBM Plex Sans", "Segoe UI", Tahoma, system-ui, sans-serif;
+}
+
+/* Dark theme — follows the browser/OS color scheme. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1e1f22;
+    --surface: #26282c;
+    --line: #34373c;
+    --line-2: #44484e;
+    --text: #e8eaed;
+    --text-2: #aeb3b9;
+    --text-3: #8a9097;
+    --accent: #e0a82e;
+    --track: #34373c;
+    --ok: #5cc46a;
+
+    --btn: #303338;
+    --btn-hover: #383c41;
+    --btn-active: #42464c;
+    --btn-border-hover: #5a5f66;
+    --thumb: #d8dbdf;
+    --thumb-border: #16181b;
+  }
 }
 
 * {
@@ -154,7 +184,7 @@ body {
   appearance: none;
   border: 1px solid var(--line-2);
   border-radius: var(--r);
-  background: #f6f7f8;
+  background: var(--btn);
   color: var(--text);
   font-size: 15px;
   line-height: 1;
@@ -162,12 +192,12 @@ body {
 }
 
 .btn:hover {
-  background: #eceef0;
-  border-color: #aab0b5;
+  background: var(--btn-hover);
+  border-color: var(--btn-border-hover);
 }
 
 .btn:active {
-  background: #e0e3e5;
+  background: var(--btn-active);
 }
 
 .btn:focus-visible {
@@ -195,32 +225,24 @@ input[type="range"]::-webkit-slider-thumb {
   appearance: none;
   width: 11px;
   height: 17px;
-  border: 1px solid #80868b;
+  border: 1px solid var(--thumb-border);
   border-radius: var(--r);
-  background: #ffffff;
+  background: var(--thumb);
   cursor: pointer;
 }
 
 input[type="range"]::-moz-range-thumb {
   width: 11px;
   height: 17px;
-  border: 1px solid #80868b;
+  border: 1px solid var(--thumb-border);
   border-radius: var(--r);
-  background: #ffffff;
+  background: var(--thumb);
   cursor: pointer;
 }
 
 input[type="range"]::-moz-range-track {
   height: 5px;
   background: transparent;
-}
-
-input[type="range"]:active::-webkit-slider-thumb {
-  background: #f0f1f2;
-}
-
-input[type="range"]:active::-moz-range-thumb {
-  background: #f0f1f2;
 }
 
 input[type="range"]:focus-visible {
