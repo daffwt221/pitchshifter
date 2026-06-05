@@ -25,7 +25,7 @@ Temporary add-ons are removed on browser restart. To keep it installed, package 
 ## How it works
 
 - `content.js` injects `injected.js` into the page's main world and relays messages between the popup and the page.
-- `injected.js` captures each media element with the Web Audio API and routes it through a phase-vocoder pitch shifter (1024-point FFT, 75% overlap-add, Hann windows, per-bin true-frequency estimation with strongest-bin remapping). It transposes without changing tempo. At pitch 0 the shifter passes audio through untouched.
+- `injected.js` captures each media element with the Web Audio API and routes it through SoundTouch, a time-domain pitch shifter (WSOLA time-stretch + resampling). Because it works in the time domain it avoids the "phasiness" / metallic artifacts of FFT phase vocoders. It transposes without changing tempo. At pitch 0 the shifter passes audio through untouched.
 - The shifter runs in a `ScriptProcessorNode`, not an AudioWorklet. AudioWorklet modules load from a URL, which page CSPs (YouTube, etc.) routinely block; `ScriptProcessorNode` runs inline and is immune to that, so it works everywhere. It is deprecated but fully supported in Firefox.
 - Speed is applied as the element's `playbackRate` with `preservesPitch` on, so tempo changes but pitch stays put.
 - The popup reads and writes state through the content script.
@@ -33,7 +33,11 @@ Temporary add-ons are removed on browser restart. To keep it installed, package 
 ## Limitations
 
 - Cross-origin media without CORS headers can't be read by the Web Audio API, so pitch can't be shifted on it (speed still works).
-- The shifter buffers ~2048 samples, so pitched output starts after a short delay when you first move the slider. Very large shifts add mild artifacts, as expected for real-time processing.
+- SoundTouch buffers a cushion of audio, so pitched output starts ~0.2 s after you first move the pitch slider. Very large shifts add mild artifacts, as expected for real-time processing.
+
+## Credits
+
+- Pitch engine: [SoundTouch JS](https://github.com/cutterbl/SoundTouchJS) by Olli Parviainen et al., GNU LGPL-2.1. The DSP classes are vendored into `injected.js` with the license header intact.
 
 ## Files
 
