@@ -46,6 +46,7 @@ function render() {
 function push() {
   if (tabId == null) return;
   api.tabs.sendMessage(tabId, { type: "setPitch", pitch, micro, speed }).catch(() => {});
+  api.storage.local.set({ settings: { pitch, micro, speed } }).catch(() => {});
 }
 
 function setPitch(v) {
