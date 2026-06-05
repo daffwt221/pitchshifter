@@ -249,8 +249,11 @@ input[type="range"]:focus-visible {
   border-color: var(--accent);
 }
 
-/* Status */
+/* Status + support row */
 .status {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
   margin-top: var(--s3);
   padding: 0 1px;
 }
@@ -258,6 +261,23 @@ input[type="range"]:focus-visible {
 .status-text {
   font-size: 11px;
   color: var(--text-3);
+}
+
+.donate {
+  margin-left: auto;
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--text-3);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.donate:hover {
+  color: var(--accent);
+}
+
+.donate .heart {
+  color: var(--accent);
 }
 
 .status-text.ok {

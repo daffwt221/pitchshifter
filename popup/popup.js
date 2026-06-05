@@ -1,6 +1,10 @@
 // popup.js — UI logic. Reads/sets pitch, microtones and speed in the active tab.
 const api = typeof browser !== "undefined" ? browser : chrome;
 
+// Donation link. Replace YOUR_USERNAME with your Ko-fi (or other) handle.
+// Until you do, the Support button stays hidden.
+const DONATE_URL = "https://ko-fi.com/YOUR_USERNAME";
+
 const pitchSlider = document.getElementById("pitchSlider");
 const microSlider = document.getElementById("microSlider");
 const speedSlider = document.getElementById("speedSlider");
@@ -127,6 +131,13 @@ async function init() {
     statusEl.textContent = "○ Not available on this page";
     statusEl.classList.add("warn");
   }
+}
+
+// Wire the Support link (hidden until a real donation URL is set).
+const donateEl = document.getElementById("donate");
+if (donateEl) {
+  if (DONATE_URL.includes("YOUR_USERNAME")) donateEl.style.display = "none";
+  else donateEl.href = DONATE_URL;
 }
 
 render();
