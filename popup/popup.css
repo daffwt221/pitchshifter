@@ -14,6 +14,7 @@ body {
   font-family: "Segoe UI", Tahoma, system-ui, sans-serif;
   font-size: 13px;
   padding: 8px;
+  overflow-x: hidden;
 }
 
 .titlebar {
@@ -31,6 +32,8 @@ body {
   background: #f7f7f7;
   margin: 0 0 8px;
   padding: 7px 8px 9px;
+  min-width: 0;        /* let the fieldset shrink instead of overflowing */
+  min-inline-size: 0;
 }
 
 .group:last-of-type {
@@ -54,6 +57,7 @@ body {
   display: flex;
   align-items: center;
   gap: 5px;
+  min-width: 0;
 }
 
 /* −/+ stepper buttons (flat, square, classic) */
@@ -112,7 +116,9 @@ body {
 
 /* Trackbar slider */
 input[type="range"] {
-  flex: 1 1 auto;
+  flex: 1 1 0;
+  min-width: 0;        /* allow the slider to shrink to fit the row */
+  width: 100%;
   -webkit-appearance: none;
   appearance: none;
   height: 4px;
