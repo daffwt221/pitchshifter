@@ -37,6 +37,8 @@ class PitchProcessor extends AudioWorkletProcessor {
       gAnaMagn: new Float32Array(F),
       gSynFreq: new Float32Array(F),
       gSynMagn: new Float32Array(F),
+      gRawR: new Float32Array(F / 2 + 1),
+      gRawI: new Float32Array(F / 2 + 1),
       gRover: 0,
     };
   }
@@ -90,6 +92,7 @@ class PitchProcessor extends AudioWorkletProcessor {
     const fifoIn = ch.gInFIFO, fifoOut = ch.gOutFIFO, work = ch.gFFTworksp;
     const lastPhase = ch.gLastPhase, sumPhase = ch.gSumPhase, accum = ch.gOutputAccum;
     const anaF = ch.gAnaFreq, anaM = ch.gAnaMagn, synF = ch.gSynFreq, synM = ch.gSynMagn;
+    const rawR = ch.gRawR, rawI = ch.gRawI;
     let magn, phase, tmp, real, imag, qpd, index, k, i, window;
     for (i = 0; i < numSamps; i++) {
       fifoIn[ch.gRover] = indata[i];
@@ -137,8 +140,25 @@ class PitchProcessor extends AudioWorkletProcessor {
           tmp += k * expct;
           sumPhase[k] += tmp;
           phase = sumPhase[k];
-          work[2 * k] = magn * Math.cos(phase);
-          work[2 * k + 1] = magn * Math.sin(phase);
+          rawR[k] = magn * Math.cos(phase);
+          rawI[k] = magn * Math.sin(phase);
+        }
+        // Loose phase locking (Puckette): replace each bin's phase with that
+        // of the sum of itself and its two neighbours, keeping the magnitude.
+        // This restores vertical phase coherence and removes the reverberant
+        // "phasiness" that a plain phase vocoder produces.
+        for (k = 0; k <= F2; k++) {
+          let sr = rawR[k], si = rawI[k];
+          if (k > 0) { sr += rawR[k - 1]; si += rawI[k - 1]; }
+          if (k < F2) { sr += rawR[k + 1]; si += rawI[k + 1]; }
+          const n = Math.sqrt(sr * sr + si * si);
+          if (n > 1e-12) {
+            work[2 * k] = synM[k] * sr / n;
+            work[2 * k + 1] = synM[k] * si / n;
+          } else {
+            work[2 * k] = rawR[k];
+            work[2 * k + 1] = rawI[k];
+          }
         }
         for (k = F + 2; k < 2 * F; k++) work[k] = 0;
         this.smbFft(work, F, 1);

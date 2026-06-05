@@ -10,7 +10,7 @@ Click the toolbar icon to open the popup.
 | --- | --- | --- |
 | Pitch | -12 to +12 | 1 semitone |
 | Microtones | -1.00 to +1.00 | 0.01 |
-| Speed | 25% to 200% | 5% |
+| Speed | 25% to 200% | 1% |
 
 Pitch shift is `(pitch + microtones) / 12` octaves and does not change tempo. Speed changes tempo while keeping the pitch (browser time-stretch). Each control has a slider, -/+ buttons, and its own reset button. A status line shows whether media was detected on the page.
 

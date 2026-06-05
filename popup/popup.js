@@ -58,8 +58,8 @@ document.getElementById("pitchMinus").addEventListener("click", () => setPitch(p
 document.getElementById("pitchPlus").addEventListener("click", () => setPitch(pitch + 1));
 document.getElementById("microMinus").addEventListener("click", () => setMicro(micro - 0.01));
 document.getElementById("microPlus").addEventListener("click", () => setMicro(micro + 0.01));
-document.getElementById("speedMinus").addEventListener("click", () => setSpeed(speed - 0.05));
-document.getElementById("speedPlus").addEventListener("click", () => setSpeed(speed + 0.05));
+document.getElementById("speedMinus").addEventListener("click", () => setSpeed(speed - 0.01));
+document.getElementById("speedPlus").addEventListener("click", () => setSpeed(speed + 0.01));
 
 document.getElementById("pitchReset").addEventListener("click", () => setPitch(0));
 document.getElementById("microReset").addEventListener("click", () => setMicro(0));
