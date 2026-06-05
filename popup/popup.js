@@ -18,6 +18,19 @@ const clampPitch = (v) => Math.max(-12, Math.min(12, Math.round(v)));
 const clampMicro = (v) => Math.max(-1, Math.min(1, Math.round(v * 100) / 100));
 const clampSpeed = (v) => Math.max(0.25, Math.min(2, Math.round(v * 100) / 100));
 
+const TRACK = "#e2e5e8";
+const FILL = "#6f93c0";
+
+// Fill the slider from its neutral point (center) to the thumb, so the bar
+// shows how far each control is pushed from its default.
+function fillSlider(el, value, min, max, center) {
+  const pct = (v) => ((v - min) / (max - min)) * 100;
+  let a = pct(center), b = pct(value);
+  if (a > b) [a, b] = [b, a];
+  el.style.background =
+    `linear-gradient(to right, ${TRACK} 0 ${a}%, ${FILL} ${a}% ${b}%, ${TRACK} ${b}% 100%)`;
+}
+
 function render() {
   pitchSlider.value = String(pitch);
   microSlider.value = String(micro);
@@ -25,6 +38,9 @@ function render() {
   pitchValue.textContent = (pitch > 0 ? "+" : "") + pitch;
   microValue.textContent = (micro > 0 ? "+" : "") + micro.toFixed(2);
   speedValue.textContent = Math.round(speed * 100) + "%";
+  fillSlider(pitchSlider, pitch, -12, 12, 0);
+  fillSlider(microSlider, micro, -1, 1, 0);
+  fillSlider(speedSlider, speed, 0.25, 2, 1);
 }
 
 function push() {
