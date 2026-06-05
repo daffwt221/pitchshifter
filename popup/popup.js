@@ -18,8 +18,8 @@ const clampPitch = (v) => Math.max(-12, Math.min(12, Math.round(v)));
 const clampMicro = (v) => Math.max(-1, Math.min(1, Math.round(v * 100) / 100));
 const clampSpeed = (v) => Math.max(0.25, Math.min(2, Math.round(v * 100) / 100));
 
-const TRACK = "#e2e5e8";
-const FILL = "#6f93c0";
+const TRACK = "#e4e6e8";
+const FILL = "#c2820f";
 
 // Fill the slider from its neutral point (center) to the thumb, so the bar
 // shows how far each control is pushed from its default.
