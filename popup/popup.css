@@ -277,7 +277,10 @@ input[type="range"]:focus-visible {
 }
 
 .donate .heart {
-  color: var(--accent);
+  color: #e0245e;
+  font-size: 14px;
+  line-height: 1;
+  vertical-align: -2px;
 }
 
 .status-text.ok {
