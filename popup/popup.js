@@ -23,21 +23,21 @@ const clampMicro = (v) => Math.max(-1, Math.min(1, Math.round(v * 100) / 100));
 const clampSpeed = (v) =>
     Math.max(0.25, Math.min(2, Math.round(v * 100) / 100));
 
-// Pull the slider colors from the active theme's CSS tokens so the fill
-// matches light/dark automatically.
+// Pull the slider colors from the active theme's CSS tokens (read fresh so a
+// theme switch updates the fills too).
 const cssVar = (n) =>
     getComputedStyle(document.documentElement).getPropertyValue(n).trim();
-const TRACK = cssVar("--track") || "#e4e6e8";
-const FILL = cssVar("--accent") || "#c2820f";
 
 // Fill the slider from its neutral point (center) to the thumb, so the bar
 // shows how far each control is pushed from its default.
 function fillSlider(el, value, min, max, center) {
+    const track = cssVar("--track") || "#e4e6e8";
+    const fill = cssVar("--accent") || "#c2820f";
     const pct = (v) => ((v - min) / (max - min)) * 100;
     let a = pct(center),
         b = pct(value);
     if (a > b) [a, b] = [b, a];
-    el.style.background = `linear-gradient(to right, ${TRACK} 0 ${a}%, ${FILL} ${a}% ${b}%, ${TRACK} ${b}% 100%)`;
+    el.style.background = `linear-gradient(to right, ${track} 0 ${a}%, ${fill} ${a}% ${b}%, ${track} ${b}% 100%)`;
 }
 
 function render() {
@@ -169,6 +169,41 @@ if (donateEl) {
     if (DONATE_URL.includes("YOUR_USERNAME")) donateEl.style.display = "none";
     else donateEl.href = DONATE_URL;
 }
+
+// --- Theme toggle -------------------------------------------------------------
+// theme: "system" (follow browser) | "light" | "dark". Persisted.
+const themeBtn = document.getElementById("themeToggle");
+let theme = "system";
+
+const systemDark = () =>
+    !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+const effectiveDark = () =>
+    theme === "dark" ? true : theme === "light" ? false : systemDark();
+
+function applyTheme() {
+    const root = document.documentElement;
+    if (theme === "dark" || theme === "light") root.setAttribute("data-theme", theme);
+    else root.removeAttribute("data-theme");
+    // CSS shows the sun (switch to light) when dark is active, else the moon.
+    if (themeBtn) themeBtn.classList.toggle("dark", effectiveDark());
+    render(); // re-fill sliders with the active theme's colors
+}
+
+if (themeBtn) {
+    themeBtn.addEventListener("click", () => {
+        theme = effectiveDark() ? "light" : "dark";
+        applyTheme();
+        api.storage.local.set({ theme }).catch(() => {});
+    });
+}
+
+api.storage.local
+    .get("theme")
+    .then((r) => {
+        theme = r && r.theme ? r.theme : "system";
+        applyTheme();
+    })
+    .catch(() => applyTheme());
 
 render();
 init();

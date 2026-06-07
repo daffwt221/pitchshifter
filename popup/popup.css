@@ -44,9 +44,29 @@
   --font: "IBM Plex Sans", "Segoe UI", Tahoma, system-ui, sans-serif;
 }
 
-/* Dark theme — follows the browser/OS color scheme. */
+/* Dark theme tokens (forced via the toggle). */
+:root[data-theme="dark"] {
+  --bg: #1e1f22;
+  --surface: #26282c;
+  --line: #34373c;
+  --line-2: #44484e;
+  --text: #e8eaed;
+  --text-2: #aeb3b9;
+  --text-3: #8a9097;
+  --accent: #e0a82e;
+  --track: #34373c;
+  --ok: #5cc46a;
+  --btn: #303338;
+  --btn-hover: #383c41;
+  --btn-active: #42464c;
+  --btn-border-hover: #5a5f66;
+  --thumb: #d8dbdf;
+  --thumb-border: #16181b;
+}
+
+/* Follow the browser/OS scheme when no explicit choice is set. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]):not([data-theme="dark"]) {
     --bg: #1e1f22;
     --surface: #26282c;
     --line: #34373c;
@@ -57,7 +77,6 @@
     --accent: #e0a82e;
     --track: #34373c;
     --ok: #5cc46a;
-
     --btn: #303338;
     --btn-hover: #383c41;
     --btn-active: #42464c;
@@ -109,6 +128,47 @@ body {
   font-weight: 600;
   letter-spacing: 0.01em;
   color: var(--text);
+}
+
+.theme-btn {
+  margin-left: auto;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  -webkit-appearance: none;
+  appearance: none;
+  border: 1px solid transparent;
+  border-radius: var(--r);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.theme-btn:hover {
+  color: var(--text);
+  background: var(--btn-hover);
+  border-color: var(--line-2);
+}
+
+.theme-btn svg {
+  display: block;
+}
+
+/* Show the moon by default (click to go dark); the sun when dark is active. */
+.theme-btn .icon-sun {
+  display: none;
+}
+
+.theme-btn.dark .icon-moon {
+  display: none;
+}
+
+.theme-btn.dark .icon-sun {
+  display: block;
 }
 
 .group {
