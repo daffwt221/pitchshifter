@@ -205,10 +205,29 @@ body {
 }
 
 .val {
+  width: 54px;
+  padding: 1px 3px;
+  border: 1px solid transparent;
+  border-radius: var(--r);
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
   font-size: 13px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  color: var(--text);
+  text-align: right;
+  cursor: text;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.val:hover {
+  border-color: var(--line-2);
+}
+
+.val:focus {
+  outline: none;
+  border-color: var(--accent);
 }
 
 .reset {

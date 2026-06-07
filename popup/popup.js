@@ -44,9 +44,9 @@ function render() {
     pitchSlider.value = String(pitch);
     microSlider.value = String(micro);
     speedSlider.value = String(speed);
-    pitchValue.textContent = (pitch > 0 ? "+" : "") + pitch;
-    microValue.textContent = (micro > 0 ? "+" : "") + micro.toFixed(2);
-    speedValue.textContent = Math.round(speed * 100) + "%";
+    pitchValue.value = (pitch > 0 ? "+" : "") + pitch;
+    microValue.value = (micro > 0 ? "+" : "") + micro.toFixed(2);
+    speedValue.value = Math.round(speed * 100) + "%";
     fillSlider(pitchSlider, pitch, -12, 12, 0);
     fillSlider(microSlider, micro, -1, 1, 0);
     fillSlider(speedSlider, speed, 0.25, 2, 1);
@@ -118,6 +118,39 @@ document
 document
     .getElementById("speedReset")
     .addEventListener("click", () => setSpeed(1));
+
+// Click a value to type it directly. On focus show the raw number; on Enter
+// or blur parse it, clamp, and reformat. Escape restores.
+function wireValueInput(el, kind) {
+    el.addEventListener("focus", () => {
+        el.value =
+            kind === "pitch"
+                ? String(pitch)
+                : kind === "micro"
+                  ? String(micro)
+                  : String(Math.round(speed * 100));
+        el.select();
+    });
+    el.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+            e.preventDefault();
+            el.blur();
+        } else if (e.key === "Escape") {
+            e.preventDefault();
+            render();
+            el.blur();
+        }
+    });
+    el.addEventListener("blur", () => {
+        const num = parseFloat(el.value.replace(/[^0-9.\-]/g, ""));
+        if (kind === "pitch") setPitch(Number.isFinite(num) ? num : pitch);
+        else if (kind === "micro") setMicro(Number.isFinite(num) ? num : micro);
+        else setSpeed(Number.isFinite(num) ? num / 100 : speed);
+    });
+}
+wireValueInput(pitchValue, "pitch");
+wireValueInput(microValue, "micro");
+wireValueInput(speedValue, "speed");
 
 function setStatus(hasMedia) {
     if (hasMedia) {
