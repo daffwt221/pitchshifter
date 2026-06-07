@@ -2,6 +2,11 @@
 
 Shifts the pitch of any video or audio on a page in real time, without changing the playback speed. For Firefox and Zen Browser. Inspired by [transpose.video](https://transpose.video/).
 
+<p>
+  <img src="screenshots/popup-light.png" alt="PitchShifter popup, light theme" width="270" />
+  <img src="screenshots/popup-dark.png" alt="PitchShifter popup, dark theme" width="270" />
+</p>
+
 ## Features
 
 - Real-time pitch shifting that keeps tempo, plus independent speed control that keeps pitch.
