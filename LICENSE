@@ -1,30 +1,14 @@
-MIT License
+PitchShifter
+Copyright (c) 2026 daffwt221. All rights reserved.
 
-Copyright (c) 2026 daffwt221
+No permission is granted to copy, modify, redistribute, or create derivative
+works of the original code in this project, except as required by the licenses
+of the third-party components listed below.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
----
-
-This extension bundles third-party components, each under its own license:
+Third-party components, each under its own license:
 
 - SoundTouch JS (pitch-shifting DSP, vendored in injected.js) —
-  GNU LGPL-2.1. The original copyright and license header is kept intact.
+  GNU LGPL-2.1. Its original copyright and license header is kept intact, and
+  that component remains available under the LGPL.
 - IBM Plex Sans (UI font in popup/fonts/) —
   SIL Open Font License 1.1, see popup/fonts/OFL.txt.

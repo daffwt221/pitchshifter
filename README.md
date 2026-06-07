@@ -57,7 +57,7 @@ Temporary add-ons are removed on browser restart. To keep it installed, package 
 
 ## License
 
-This project's own code is [MIT](LICENSE). Bundled components keep their own licenses: SoundTouch JS (LGPL-2.1) and IBM Plex Sans (SIL OFL-1.1) — see Credits.
+Copyright (c) 2026 daffwt221. All rights reserved (see [LICENSE](LICENSE)). Bundled components keep their own licenses: SoundTouch JS (LGPL-2.1) and IBM Plex Sans (SIL OFL-1.1) — see Credits.
 
 ## Files
 

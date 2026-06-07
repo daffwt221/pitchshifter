@@ -11,10 +11,14 @@ PitchShifter
 Primary: Audio/Video. Tags: pitch, audio, music, transpose, speed, privacy.
 
 ## Support site
-https://github.com/daffwt221/pitchshifter
+Optional (the source repo is private). Use your Ko-fi page
+(https://ko-fi.com/daffwt221) or a support email, or leave it blank — AMO does
+not require one.
 
 ## License
-MIT (see LICENSE in the repository).
+All Rights Reserved (proprietary). Choose "All Rights Reserved" on AMO.
+Bundled components keep their own licenses: SoundTouch JS (LGPL-2.1) and
+IBM Plex Sans (SIL OFL-1.1).
 
 ## Privacy
 This add-on collects no data. It does not track you, has no account, no ads,
@@ -44,7 +48,7 @@ Controls
 - Microtones: fine tuning between semitones.
 - Speed: 25% to 200%, keeping the pitch intact.
 
-Built on the SoundTouch time-domain engine for clean, natural-sounding shifts. Open source (MIT).
+Built on the SoundTouch time-domain engine for clean, natural-sounding shifts.
 
 ---
 
@@ -69,7 +73,7 @@ Controlos
 - Microtons: afinação fina entre semitons.
 - Velocidade: 25% a 200%, mantendo o tom.
 
-Construído sobre o motor SoundTouch (domínio do tempo) para alterações limpas e naturais. Código aberto (MIT).
+Construído sobre o motor SoundTouch (domínio do tempo) para alterações limpas e naturais.
 
 ---
 
