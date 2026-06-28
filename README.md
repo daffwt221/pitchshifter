@@ -1,6 +1,6 @@
 # PitchShifter
 
-Shifts the pitch of any video or audio on a page in real time, without changing the playback speed. For Firefox and Zen Browser.
+Shifts the pitch of any video or audio on a page in real time, without changing the playback speed. For Firefox.
 
 <p>
   <img src="screenshots/popup-light.png" alt="PitchShifter popup, light theme" width="270" />
