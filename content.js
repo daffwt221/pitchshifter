@@ -1,9 +1,8 @@
 // content.js — bridge between the popup and the page-world pitch shifter.
 //
-// Why a page-world script? Web Audio's createMediaElementSource() must operate
-// on the page's own media elements. Doing that from the isolated content-script
-// world is unreliable in Firefox (Xray wrappers), so we inject injected.js into
-// the page's main world and talk to it via window.postMessage.
+// injected.js runs directly in the page's MAIN world via Manifest V3 so Web Audio
+// can operate on the page's own media elements. This isolated content script
+// relays messages between the popup and injected.js via window.postMessage.
 
 const api = typeof browser !== "undefined" ? browser : chrome;
 
@@ -39,19 +38,6 @@ function maybeApplyStored() {
   cachedState.speed = speed;
   window.postMessage({ source: "pitchshifter-cs", type: "setPitch", pitch, micro, speed }, "*");
 }
-
-// --- Inject the page-world script ---------------------------------------------
-function inject() {
-  try {
-    const s = document.createElement("script");
-    s.src = api.runtime.getURL("injected.js");
-    s.onload = () => s.remove();
-    (document.head || document.documentElement).appendChild(s);
-  } catch (e) {
-    /* some documents (e.g. XML) may reject injection — ignore */
-  }
-}
-inject();
 
 // --- Page world -> content ----------------------------------------------------
 window.addEventListener("message", (ev) => {

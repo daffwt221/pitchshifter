@@ -658,6 +658,29 @@
   let curSpeed = 1;
   let lastHasMedia = null;
 
+  // Media elements that aren't necessarily attached to the DOM.
+  // Some players (e.g. Spotify Web) play through detached HTMLMediaElements.
+  const detachedMedia = new Set();
+
+  // Catch media playback even when the element is not in document.body.
+  const nativePlay = HTMLMediaElement.prototype.play;
+
+  HTMLMediaElement.prototype.play = function (...args) {
+    detachedMedia.add(this);
+
+    const result = nativePlay.apply(this, args);
+
+    // Let the page finish configuring the media element first (src, MediaKeys, etc.).
+    setTimeout(() => {
+      try {
+        apply();
+        postState();
+      } catch (e) {}
+    }, 0);
+
+    return result;
+  };
+
   const mult = () => (curPitch + curMicro) / 12;
   const ratio = () => Math.pow(2, mult());
   const isActive = () => Math.abs(mult()) > 1e-6;
@@ -672,7 +695,16 @@
   }
 
   function getMedia() {
-    return Array.from(document.querySelectorAll("video, audio"));
+    const media = new Set(
+      document.querySelectorAll("video, audio")
+    );
+
+    // Include media elements playing outside the DOM.
+    for (const el of detachedMedia) {
+      media.add(el);
+    }
+
+    return Array.from(media);
   }
 
   // Speed = native playback rate with pitch preserved (browser time-stretch).

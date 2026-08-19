@@ -11,7 +11,7 @@ Shifts the pitch of any video or audio on a page in real time, without changing 
 
 - Real-time pitch shifting that keeps tempo, plus independent speed control that keeps pitch.
 - Time-domain engine (SoundTouch / WSOLA) — none of the metallic "phasiness" of FFT pitch shifters.
-- Works everywhere, including pages with strict CSP (YouTube, etc.).
+- Works on supported HTML5 media, including pages with strict CSP (YouTube, etc.) and detached media elements used by players such as Spotify Web.
 - Zero added latency when neutral: at pitch 0 the audio goes straight through, as if the effect were off.
 - Settings are remembered across page reloads.
 - Clean control-panel UI that follows your light/dark browser theme.
@@ -38,9 +38,9 @@ Temporary add-ons are removed on browser restart. To keep it installed, package 
 
 ## How it works
 
-- `content.js` injects `injected.js` into the page's main world and relays messages between the popup and the page.
+- `injected.js` runs directly in the page's main world via Manifest V3; `content.js` relays messages between the popup and the page.
 - `injected.js` captures each media element with the Web Audio API and routes it through SoundTouch, a time-domain pitch shifter (WSOLA time-stretch + resampling). Because it works in the time domain it avoids the metallic artifacts of FFT phase vocoders.
-- The shifter runs in a `ScriptProcessorNode`, not an AudioWorklet. AudioWorklet modules load from a URL, which page CSPs (YouTube, etc.) routinely block; `ScriptProcessorNode` runs inline and is immune to that, so it works everywhere. It is deprecated but fully supported in Firefox.
+- The shifter runs in a `ScriptProcessorNode`, not an AudioWorklet. AudioWorklet modules load from a URL, which page CSPs (YouTube, etc.) can block; `ScriptProcessorNode` runs inline and avoids that dependency. It is deprecated but fully supported in Firefox.
 - At pitch 0, the element is wired straight to the output and the shifter is taken out of the path entirely — no buffering, no latency. The shifter (and its small latency) is inserted only while you are actually pitch-shifting.
 - Speed is applied as the element's `playbackRate` with `preservesPitch` on, so tempo changes but pitch stays put.
 - The popup reads and writes state through the content script and saves it to `storage.local`; the content script reapplies the saved settings on each page load.
@@ -63,7 +63,7 @@ Copyright (c) 2026 daffwt221. All rights reserved (see [LICENSE](LICENSE)). Bund
 
 | File | Role |
 | --- | --- |
-| `manifest.json` | Manifest V2; `activeTab`, `tabs`, `storage`; popup + content script on all frames. |
+| `manifest.json` | Manifest V3; `storage`; popup plus isolated/page-world content scripts on all frames. |
 | `popup/` | Popup UI (`popup.html`, `popup.css`, `popup.js`) and bundled font in `popup/fonts/`. |
 | `content.js` | Bridge between popup and page; loads/saves persisted settings. |
 | `injected.js` | Page-world Web Audio engine (SoundTouch shifter + routing). |

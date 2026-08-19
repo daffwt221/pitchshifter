@@ -1,7 +1,7 @@
 {
-  "manifest_version": 2,
+  "manifest_version": 3,
   "name": "PitchShifter",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Shift the pitch of any video or audio on a page in real time, without changing the playback speed.",
   "browser_specific_settings": {
     "gecko": {
@@ -17,7 +17,7 @@
     "96": "icons/icon.svg",
     "128": "icons/icon.svg"
   },
-  "browser_action": {
+  "action": {
     "default_title": "PitchShifter",
     "default_popup": "popup/popup.html",
     "default_icon": {
@@ -26,17 +26,21 @@
     }
   },
   "permissions": [
-    "activeTab",
-    "tabs",
     "storage"
   ],
   "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["injected.js"],
+      "run_at": "document_start",
+      "all_frames": true,
+      "world": "MAIN"
+    },
     {
       "matches": ["<all_urls>"],
       "js": ["content.js"],
       "run_at": "document_start",
       "all_frames": true
     }
-  ],
-  "web_accessible_resources": ["injected.js"]
+  ]
 }
