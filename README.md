@@ -7,6 +7,8 @@ Shifts the pitch of any video or audio on a page in real time, without changing 
   <img src="screenshots/popup-dark.png" alt="PitchShifter popup, dark theme" width="270" />
 </p>
 
+🦊 https://addons.mozilla.org/en-US/firefox/addon/pitchshifter/ 🦊
+
 ## Features
 
 - Real-time pitch shifting that keeps tempo, plus independent speed control that keeps pitch.
@@ -15,8 +17,6 @@ Shifts the pitch of any video or audio on a page in real time, without changing 
 - Zero added latency when neutral: at pitch 0 the audio goes straight through, as if the effect were off.
 - Settings are remembered across page reloads.
 - Clean control-panel UI that follows your light/dark browser theme.
-
-🦊 https://addons.mozilla.org/en-US/firefox/addon/pitchshifter/ 🦊
 
 ## Controls
 
