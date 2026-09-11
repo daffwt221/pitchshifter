@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "PitchShifter",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "Shift the pitch of any video or audio on a page in real time, without changing the playback speed.",
   "browser_specific_settings": {
     "gecko": {

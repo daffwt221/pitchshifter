@@ -656,7 +656,12 @@
   let curPitch = 0;
   let curMicro = 0;
   let curSpeed = 1;
+  let enabled = false;
   let lastHasMedia = null;
+
+  // Native values are captured only for media controlled in this tab. Turning
+  // the extension off restores them and stops future playbackRate writes.
+  const nativeMediaState = new Map();
 
   // Media elements that aren't necessarily attached to the DOM.
   // Some players (e.g. Spotify Web) play through detached HTMLMediaElements.
@@ -683,7 +688,7 @@
 
   const mult = () => (curPitch + curMicro) / 12;
   const ratio = () => Math.pow(2, mult());
-  const isActive = () => Math.abs(mult()) > 1e-6;
+  const isActive = () => enabled && Math.abs(mult()) > 1e-6;
 
   function ensureCtx() {
     if (!ctx) {
@@ -709,14 +714,37 @@
 
   // Speed = native playback rate with pitch preserved (browser time-stretch).
   function applySpeed() {
+    if (!enabled) return;
     getMedia().forEach((el) => {
       try {
+        if (!nativeMediaState.has(el)) {
+          nativeMediaState.set(el, {
+            playbackRate: el.playbackRate,
+            preservesPitch: el.preservesPitch,
+            mozPreservesPitch: el.mozPreservesPitch,
+            webkitPreservesPitch: el.webkitPreservesPitch,
+          });
+        }
         el.preservesPitch = true;
         el.mozPreservesPitch = true;
         el.webkitPreservesPitch = true;
         if (el.playbackRate !== curSpeed) el.playbackRate = curSpeed;
       } catch (e) {}
     });
+  }
+
+  function restoreSpeed() {
+    nativeMediaState.forEach((state, el) => {
+      try {
+        el.playbackRate = state.playbackRate;
+        if (state.preservesPitch !== undefined) el.preservesPitch = state.preservesPitch;
+        if (state.mozPreservesPitch !== undefined) el.mozPreservesPitch = state.mozPreservesPitch;
+        if (state.webkitPreservesPitch !== undefined) {
+          el.webkitPreservesPitch = state.webkitPreservesPitch;
+        }
+      } catch (e) {}
+    });
+    nativeMediaState.clear();
   }
 
   // Route one element: source -> shifter -> destination. The shifter passes
@@ -761,6 +789,7 @@
   }
 
   function apply() {
+    if (!enabled) return;
     applySpeed();
     if (isActive()) {
       ensureCtx();
@@ -775,6 +804,7 @@
         source: "pitchshifter-page",
         type: "state",
         hasMedia: getMedia().length > 0,
+        enabled,
         pitch: curPitch,
         micro: curMicro,
         speed: curSpeed,
@@ -789,10 +819,23 @@
     const d = ev.data;
     if (!d || d.source !== "pitchshifter-cs") return;
     if (d.type === "setPitch") {
+      enabled = d.enabled !== false;
       curPitch = Number(d.pitch) || 0;
       curMicro = Number(d.micro) || 0;
       curSpeed = Number(d.speed) || 1;
       apply();
+      postState();
+    } else if (d.type === "setEnabled") {
+      curPitch = Number(d.pitch) || 0;
+      curMicro = Number(d.micro) || 0;
+      curSpeed = Number(d.speed) || 1;
+      enabled = !!d.enabled;
+      if (enabled) {
+        apply();
+      } else {
+        restoreSpeed();
+        wired.forEach(applyNode);
+      }
       postState();
     } else if (d.type === "getState") {
       postState();
@@ -805,7 +848,7 @@
     if (moTimer) return;
     moTimer = setTimeout(() => {
       moTimer = null;
-      applySpeed();
+      if (enabled) applySpeed();
       if (isActive()) {
         ensureCtx();
         getMedia().forEach(wire);

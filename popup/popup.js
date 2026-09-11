@@ -12,8 +12,11 @@ const pitchValue = document.getElementById("pitchValue");
 const microValue = document.getElementById("microValue");
 const speedValue = document.getElementById("speedValue");
 const statusEl = document.getElementById("status");
+const enabledToggle = document.getElementById("enabledToggle");
 
 let tabId = null;
+let enabled = false;
+let hasMedia = false;
 let pitch = 0; // integer semitones, -12..12
 let micro = 0; // fine, -1.00..1.00
 let speed = 1; // playback rate, 0.25..2.00
@@ -50,12 +53,21 @@ function render() {
     fillSlider(pitchSlider, pitch, -12, 12, 0);
     fillSlider(microSlider, micro, -1, 1, 0);
     fillSlider(speedSlider, speed, 0.25, 2, 1);
+    enabledToggle.textContent = enabled ? "On" : "Off";
+    enabledToggle.classList.toggle("on", enabled);
+    enabledToggle.setAttribute("aria-pressed", String(enabled));
+    enabledToggle.title = enabled ? "Disable on this tab" : "Enable on this tab";
+    enabledToggle.setAttribute("aria-label", enabledToggle.title);
 }
 
 function push() {
+    // Moving any control is an explicit request to use PitchShifter here.
+    enabled = true;
+    render();
+    setStatus(hasMedia);
     if (tabId == null) return;
     api.tabs
-        .sendMessage(tabId, { type: "setPitch", pitch, micro, speed })
+        .sendMessage(tabId, { type: "setPitch", enabled, pitch, micro, speed })
         .catch(() => {});
     api.storage.local
         .set({ settings: { pitch, micro, speed } })
@@ -64,19 +76,16 @@ function push() {
 
 function setPitch(v) {
     pitch = clampPitch(v);
-    render();
     push();
 }
 
 function setMicro(v) {
     micro = clampMicro(v);
-    render();
     push();
 }
 
 function setSpeed(v) {
     speed = clampSpeed(v);
-    render();
     push();
 }
 
@@ -153,7 +162,11 @@ wireValueInput(microValue, "micro");
 wireValueInput(speedValue, "speed");
 
 function setStatus(hasMedia) {
-    if (hasMedia) {
+    if (!enabled) {
+        statusEl.textContent = "○ Off on this tab";
+        statusEl.classList.add("warn");
+        statusEl.classList.remove("ok");
+    } else if (hasMedia) {
         statusEl.textContent = "● Media detected";
         statusEl.classList.add("ok");
         statusEl.classList.remove("warn");
@@ -164,14 +177,45 @@ function setStatus(hasMedia) {
     }
 }
 
+function toggleEnabled() {
+    enabled = !enabled;
+    render();
+    setStatus(hasMedia);
+    if (tabId == null) return;
+    api.tabs
+        .sendMessage(tabId, {
+            type: "setEnabled",
+            enabled,
+            pitch,
+            micro,
+            speed,
+        })
+        .catch(() => {});
+}
+
+enabledToggle.addEventListener("click", toggleEnabled);
+
 // Live updates pushed from any frame (covers media inside iframes/embeds).
-api.runtime.onMessage.addListener((msg) => {
-    if (msg && msg.type === "stateUpdate" && msg.hasMedia) setStatus(true);
+api.runtime.onMessage.addListener((msg, sender) => {
+    if (!msg || msg.type !== "stateUpdate") return;
+    if (!sender.tab || sender.tab.id !== tabId) return;
+    hasMedia = hasMedia || !!msg.hasMedia;
+    setStatus(hasMedia);
 });
 
 async function init() {
+    try {
+        const stored = await api.storage.local.get("settings");
+        if (stored && stored.settings) {
+            pitch = clampPitch(stored.settings.pitch || 0);
+            micro = clampMicro(stored.settings.micro || 0);
+            speed = clampSpeed(stored.settings.speed || 1);
+        }
+    } catch (e) {}
+
     const tabs = await api.tabs.query({ active: true, currentWindow: true });
     if (!tabs || !tabs[0]) {
+        render();
         setStatus(false);
         return;
     }
@@ -179,17 +223,27 @@ async function init() {
     try {
         const state = await api.tabs.sendMessage(tabId, { type: "getState" });
         if (state) {
-            pitch = clampPitch(state.pitch || 0);
-            micro = clampMicro(state.micro || 0);
-            speed = clampSpeed(state.speed || 1);
+            enabled = !!state.enabled;
+            hasMedia = !!state.hasMedia;
+            const tabHasPreset =
+                enabled ||
+                Number(state.pitch) !== 0 ||
+                Number(state.micro) !== 0 ||
+                Math.abs(Number(state.speed || 1) - 1) > 1e-6;
+            if (tabHasPreset) {
+                pitch = clampPitch(state.pitch || 0);
+                micro = clampMicro(state.micro || 0);
+                speed = clampSpeed(state.speed || 1);
+            }
             render();
-            setStatus(!!state.hasMedia);
+            setStatus(hasMedia);
         } else {
             render();
             setStatus(false);
         }
     } catch (e) {
         // No content script here (e.g. about:, addons page, PDF viewer).
+        enabled = false;
         render();
         statusEl.textContent = "○ Not available on this page";
         statusEl.classList.add("warn");

@@ -40,6 +40,7 @@ Private by design
 
 Plug and play
 - Click the toolbar icon and move a slider. That's it — no setup.
+- On/Off applies only to the current tab, so media controls in other tabs keep working normally.
 - Works on any page with audio or video, including YouTube and sites with strict security policies.
 - At a neutral setting it gets out of the way completely, with zero added latency.
 
@@ -65,6 +66,7 @@ Privado por princípio
 
 Plug and play
 - Clica no ícone e mexe num slider. É só isto — sem configuração.
+- O botão On/Off aplica-se apenas ao separador atual, sem interferir nos controlos de multimédia dos outros separadores.
 - Funciona em qualquer página com áudio ou vídeo, incluindo YouTube e sites com políticas de segurança restritas.
 - Em posição neutra sai completamente do caminho, com latência zero.
 
