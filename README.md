@@ -16,6 +16,8 @@ Shifts the pitch of any video or audio on a page in real time, without changing 
 - Settings are remembered across page reloads.
 - Clean control-panel UI that follows your light/dark browser theme.
 
+🦊 https://addons.mozilla.org/en-US/firefox/addon/pitchshifter/ 🦊
+
 ## Controls
 
 Click the toolbar icon to open the popup.
