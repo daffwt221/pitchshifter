@@ -3,9 +3,9 @@
 Transpose browser media, change its speed independently and add adjustable reverb — all isolated to the current tab. For Firefox.
 
 <p>
-  <img src="screenshots/popup-light.png" alt="PitchShifter Pitch and Speed controls, light theme" width="270" />
-  <img src="screenshots/popup-dark.png" alt="PitchShifter Pitch and Speed controls, dark theme" width="270" />
-  <img src="screenshots/popup-reverb-dark.png" alt="PitchShifter advanced Reverb controls, dark theme" width="270" />
+  <img src="screenshots/popup-light.png" alt="PitchShifter Pitch and Speed controls, light theme" width="270" align="top" />
+  <img src="screenshots/popup-dark.png" alt="PitchShifter Pitch and Speed controls, dark theme" width="270" align="top" />
+  <img src="screenshots/popup-reverb-dark.png" alt="PitchShifter advanced Reverb controls, dark theme" width="270" align="top" />
 </p>
 
 🦊 https://addons.mozilla.org/en-US/firefox/addon/pitchshifter/ 🦊
