@@ -1,650 +1,180 @@
 // injected.js — runs in the PAGE world.
-// Routes every <video>/<audio> element through a SoundTouch pitch shifter and
-// applies the pitch chosen in the popup. Pitch shift (octaves) =
-// (pitch + micro) / 12. Speed (playbackRate) is applied on the element with
-// pitch preserved.
+// Routes media in this tab through SoundTouchJS and applies the values chosen
+// in the popup. Speed is set on the media element; the selected worklet
+// compensates for that rate while also applying the requested pitch.
 //
-// SoundTouch is a time-domain engine (WSOLA time-stretch + resampling), so it
-// has none of the "phasiness" / metallic artifacts of FFT phase vocoders. It
-// runs inside a ScriptProcessorNode: AudioWorklet modules must load from a URL
-// which page CSPs (YouTube, etc.) block, while ScriptProcessorNode runs inline
-// and works everywhere. Deprecated but fully supported in Firefox.
+// WSOLA handles the normal range because it preserves transients well. At very
+// slow speeds a phase vocoder takes over because it avoids WSOLA's repeated /
+// gapped texture. Both engines run off the page thread in AudioWorklets.
 (function () {
   if (window.__pitchShifterInjected) return;
   window.__pitchShifterInjected = true;
 
-  // ---- Vendored SoundTouch JS (LGPL-2.1) DSP classes ----
-  /*
-   * SoundTouch JS v0.3.0 audio processing library
-   * Copyright (c) Olli Parviainen
-   * Copyright (c) Ryan Berdeen
-   * Copyright (c) Jakub Fiala
-   * Copyright (c) Steve 'Cutter' Blades
-   *
-   * This library is free software; you can redistribute it and/or
-   * modify it under the terms of the GNU Lesser General Public
-   * License as published by the Free Software Foundation; either
-   * version 2.1 of the License, or (at your option) any later version.
-   *
-   * This library is distributed in the hope that it will be useful,
-   * but WITHOUT ANY WARRANTY; without even the implied warranty of
-   * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   * Lesser General Public License for more details.
-   *
-   * You should have received a copy of the GNU Lesser General Public
-   * License along with this library; if not, write to the Free Software
-   * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
-   */
-  class FifoSampleBuffer {
-    constructor() {
-      this._vector = new Float32Array();
-      this._position = 0;
-      this._frameCount = 0;
-    }
-    get vector() {
-      return this._vector;
-    }
-    get position() {
-      return this._position;
-    }
-    get startIndex() {
-      return this._position * 2;
-    }
-    get frameCount() {
-      return this._frameCount;
-    }
-    get endIndex() {
-      return (this._position + this._frameCount) * 2;
-    }
-    clear() {
-      this._vector.fill(0);
-      this._position = 0;
-      this._frameCount = 0;
-    }
-    put(numFrames) {
-      this._frameCount += numFrames;
-    }
-    putSamples(samples, position, numFrames = 0) {
-      position = position || 0;
-      const sourceOffset = position * 2;
-      if (!(numFrames >= 0)) {
-        numFrames = (samples.length - sourceOffset) / 2;
-      }
-      const numSamples = numFrames * 2;
-      this.ensureCapacity(numFrames + this._frameCount);
-      const destOffset = this.endIndex;
-      this.vector.set(samples.subarray(sourceOffset, sourceOffset + numSamples), destOffset);
-      this._frameCount += numFrames;
-    }
-    putBuffer(buffer, position, numFrames = 0) {
-      position = position || 0;
-      if (!(numFrames >= 0)) {
-        numFrames = buffer.frameCount - position;
-      }
-      this.putSamples(buffer.vector, buffer.position + position, numFrames);
-    }
-    receive(numFrames) {
-      if (!(numFrames >= 0) || numFrames > this._frameCount) {
-        numFrames = this.frameCount;
-      }
-      this._frameCount -= numFrames;
-      this._position += numFrames;
-    }
-    receiveSamples(output, numFrames = 0) {
-      const numSamples = numFrames * 2;
-      const sourceOffset = this.startIndex;
-      output.set(this._vector.subarray(sourceOffset, sourceOffset + numSamples));
-      this.receive(numFrames);
-    }
-    extract(output, position = 0, numFrames = 0) {
-      const sourceOffset = this.startIndex + position * 2;
-      const numSamples = numFrames * 2;
-      output.set(this._vector.subarray(sourceOffset, sourceOffset + numSamples));
-    }
-    ensureCapacity(numFrames = 0) {
-      const minLength = parseInt(numFrames * 2);
-      if (this._vector.length < minLength) {
-        const newVector = new Float32Array(minLength);
-        newVector.set(this._vector.subarray(this.startIndex, this.endIndex));
-        this._vector = newVector;
-        this._position = 0;
-      } else {
-        this.rewind();
-      }
-    }
-    ensureAdditionalCapacity(numFrames = 0) {
-      this.ensureCapacity(this._frameCount + numFrames);
-    }
-    rewind() {
-      if (this._position > 0) {
-        this._vector.set(this._vector.subarray(this.startIndex, this.endIndex));
-        this._position = 0;
-      }
-    }
-  }
-  class AbstractFifoSamplePipe {
-    constructor(createBuffers) {
-      if (createBuffers) {
-        this._inputBuffer = new FifoSampleBuffer();
-        this._outputBuffer = new FifoSampleBuffer();
-      } else {
-        this._inputBuffer = this._outputBuffer = null;
-      }
-    }
-    get inputBuffer() {
-      return this._inputBuffer;
-    }
-    set inputBuffer(inputBuffer) {
-      this._inputBuffer = inputBuffer;
-    }
-    get outputBuffer() {
-      return this._outputBuffer;
-    }
-    set outputBuffer(outputBuffer) {
-      this._outputBuffer = outputBuffer;
-    }
-    clear() {
-      this._inputBuffer.clear();
-      this._outputBuffer.clear();
-    }
-  }
-  class RateTransposer extends AbstractFifoSamplePipe {
-    constructor(createBuffers) {
-      super(createBuffers);
-      this.reset();
-      this._rate = 1;
-    }
-    set rate(rate) {
-      this._rate = rate;
-    }
-    reset() {
-      this.slopeCount = 0;
-      this.prevSampleL = 0;
-      this.prevSampleR = 0;
-    }
-    clear() {
-      super.clear();
-      this.reset();
-    }
-    clone() {
-      const result = new RateTransposer();
-      result.rate = this._rate;
-      return result;
-    }
-    process() {
-      const numFrames = this._inputBuffer.frameCount;
-      this._outputBuffer.ensureAdditionalCapacity(numFrames / this._rate + 1);
-      const numFramesOutput = this.transpose(numFrames);
-      this._inputBuffer.receive();
-      this._outputBuffer.put(numFramesOutput);
-    }
-    transpose(numFrames = 0) {
-      if (numFrames === 0) {
-        return 0;
-      }
-      const src = this._inputBuffer.vector;
-      const srcOffset = this._inputBuffer.startIndex;
-      const dest = this._outputBuffer.vector;
-      const destOffset = this._outputBuffer.endIndex;
-      let used = 0;
-      let i = 0;
-      while (this.slopeCount < 1.0) {
-        dest[destOffset + 2 * i] = (1.0 - this.slopeCount) * this.prevSampleL + this.slopeCount * src[srcOffset];
-        dest[destOffset + 2 * i + 1] = (1.0 - this.slopeCount) * this.prevSampleR + this.slopeCount * src[srcOffset + 1];
-        i = i + 1;
-        this.slopeCount += this._rate;
-      }
-      this.slopeCount -= 1.0;
-      if (numFrames !== 1) {
-        out: while (true) {
-          while (this.slopeCount > 1.0) {
-            this.slopeCount -= 1.0;
-            used = used + 1;
-            if (used >= numFrames - 1) {
-              break out;
-            }
-          }
-          const srcIndex = srcOffset + 2 * used;
-          dest[destOffset + 2 * i] = (1.0 - this.slopeCount) * src[srcIndex] + this.slopeCount * src[srcIndex + 2];
-          dest[destOffset + 2 * i + 1] = (1.0 - this.slopeCount) * src[srcIndex + 1] + this.slopeCount * src[srcIndex + 3];
-          i = i + 1;
-          this.slopeCount += this._rate;
-        }
-      }
-      this.prevSampleL = src[srcOffset + 2 * numFrames - 2];
-      this.prevSampleR = src[srcOffset + 2 * numFrames - 1];
-      return i;
-    }
-  }
-  const USE_AUTO_SEQUENCE_LEN = 0;
-  const DEFAULT_SEQUENCE_MS = USE_AUTO_SEQUENCE_LEN;
-  const USE_AUTO_SEEKWINDOW_LEN = 0;
-  const DEFAULT_SEEKWINDOW_MS = USE_AUTO_SEEKWINDOW_LEN;
-  const DEFAULT_OVERLAP_MS = 8;
-  const _SCAN_OFFSETS = [[124, 186, 248, 310, 372, 434, 496, 558, 620, 682, 744, 806, 868, 930, 992, 1054, 1116, 1178, 1240, 1302, 1364, 1426, 1488, 0], [-100, -75, -50, -25, 25, 50, 75, 100, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [-20, -15, -10, -5, 5, 10, 15, 20, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [-4, -3, -2, -1, 1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]];
-  const AUTOSEQ_TEMPO_LOW = 0.25;
-  const AUTOSEQ_TEMPO_TOP = 4.0;
-  const AUTOSEQ_AT_MIN = 125.0;
-  const AUTOSEQ_AT_MAX = 50.0;
-  const AUTOSEQ_K = (AUTOSEQ_AT_MAX - AUTOSEQ_AT_MIN) / (AUTOSEQ_TEMPO_TOP - AUTOSEQ_TEMPO_LOW);
-  const AUTOSEQ_C = AUTOSEQ_AT_MIN - AUTOSEQ_K * AUTOSEQ_TEMPO_LOW;
-  const AUTOSEEK_AT_MIN = 25.0;
-  const AUTOSEEK_AT_MAX = 15.0;
-  const AUTOSEEK_K = (AUTOSEEK_AT_MAX - AUTOSEEK_AT_MIN) / (AUTOSEQ_TEMPO_TOP - AUTOSEQ_TEMPO_LOW);
-  const AUTOSEEK_C = AUTOSEEK_AT_MIN - AUTOSEEK_K * AUTOSEQ_TEMPO_LOW;
-  class Stretch extends AbstractFifoSamplePipe {
-    constructor(createBuffers) {
-      super(createBuffers);
-      this._quickSeek = true;
-      this.midBufferDirty = false;
-      this.midBuffer = null;
-      this.overlapLength = 0;
-      this.autoSeqSetting = true;
-      this.autoSeekSetting = true;
-      this._tempo = 1;
-      this.setParameters(44100, DEFAULT_SEQUENCE_MS, DEFAULT_SEEKWINDOW_MS, DEFAULT_OVERLAP_MS);
-    }
-    clear() {
-      super.clear();
-      this.clearMidBuffer();
-    }
-    clearMidBuffer() {
-      this.midBufferDirty = false;
-      this.midBuffer = null;
-      if (this.refMidBuffer) {
-        this.refMidBuffer.fill(0);
-      }
-      this.skipFract = 0;
-    }
-    setParameters(sampleRate, sequenceMs, seekWindowMs, overlapMs) {
-      if (sampleRate > 0) {
-        this.sampleRate = sampleRate;
-      }
-      if (overlapMs > 0) {
-        this.overlapMs = overlapMs;
-      }
-      if (sequenceMs > 0) {
-        this.sequenceMs = sequenceMs;
-        this.autoSeqSetting = false;
-      } else {
-        this.autoSeqSetting = true;
-      }
-      if (seekWindowMs > 0) {
-        this.seekWindowMs = seekWindowMs;
-        this.autoSeekSetting = false;
-      } else {
-        this.autoSeekSetting = true;
-      }
-      this.calculateSequenceParameters();
-      this.calculateOverlapLength(this.overlapMs);
-      this.tempo = this._tempo;
-    }
-    set tempo(newTempo) {
-      let intskip;
-      this._tempo = newTempo;
-      this.calculateSequenceParameters();
-      this.nominalSkip = this._tempo * (this.seekWindowLength - this.overlapLength);
-      this.skipFract = 0;
-      intskip = Math.floor(this.nominalSkip + 0.5);
-      this.sampleReq = Math.max(intskip + this.overlapLength, this.seekWindowLength) + this.seekLength;
-    }
-    get tempo() {
-      return this._tempo;
-    }
-    get inputChunkSize() {
-      return this.sampleReq;
-    }
-    get outputChunkSize() {
-      return this.overlapLength + Math.max(0, this.seekWindowLength - 2 * this.overlapLength);
-    }
-    calculateOverlapLength(overlapInMsec = 0) {
-      let newOvl;
-      newOvl = this.sampleRate * overlapInMsec / 1000;
-      newOvl = newOvl < 16 ? 16 : newOvl;
-      newOvl -= newOvl % 8;
-      this.overlapLength = newOvl;
-      this.refMidBuffer = new Float32Array(this.overlapLength * 2);
-      this.midBuffer = new Float32Array(this.overlapLength * 2);
-    }
-    checkLimits(x, mi, ma) {
-      return x < mi ? mi : x > ma ? ma : x;
-    }
-    calculateSequenceParameters() {
-      let seq;
-      let seek;
-      if (this.autoSeqSetting) {
-        seq = AUTOSEQ_C + AUTOSEQ_K * this._tempo;
-        seq = this.checkLimits(seq, AUTOSEQ_AT_MAX, AUTOSEQ_AT_MIN);
-        this.sequenceMs = Math.floor(seq + 0.5);
-      }
-      if (this.autoSeekSetting) {
-        seek = AUTOSEEK_C + AUTOSEEK_K * this._tempo;
-        seek = this.checkLimits(seek, AUTOSEEK_AT_MAX, AUTOSEEK_AT_MIN);
-        this.seekWindowMs = Math.floor(seek + 0.5);
-      }
-      this.seekWindowLength = Math.floor(this.sampleRate * this.sequenceMs / 1000);
-      this.seekLength = Math.floor(this.sampleRate * this.seekWindowMs / 1000);
-    }
-    set quickSeek(enable) {
-      this._quickSeek = enable;
-    }
-    clone() {
-      const result = new Stretch();
-      result.tempo = this._tempo;
-      result.setParameters(this.sampleRate, this.sequenceMs, this.seekWindowMs, this.overlapMs);
-      return result;
-    }
-    seekBestOverlapPosition() {
-      return this._quickSeek ? this.seekBestOverlapPositionStereoQuick() : this.seekBestOverlapPositionStereo();
-    }
-    seekBestOverlapPositionStereo() {
-      let bestOffset;
-      let bestCorrelation;
-      let correlation;
-      let i = 0;
-      this.preCalculateCorrelationReferenceStereo();
-      bestOffset = 0;
-      bestCorrelation = Number.MIN_VALUE;
-      for (; i < this.seekLength; i = i + 1) {
-        correlation = this.calculateCrossCorrelationStereo(2 * i, this.refMidBuffer);
-        if (correlation > bestCorrelation) {
-          bestCorrelation = correlation;
-          bestOffset = i;
-        }
-      }
-      return bestOffset;
-    }
-    seekBestOverlapPositionStereoQuick() {
-      let bestOffset;
-      let bestCorrelation;
-      let correlation;
-      let scanCount = 0;
-      let correlationOffset;
-      let tempOffset;
-      this.preCalculateCorrelationReferenceStereo();
-      bestCorrelation = Number.MIN_VALUE;
-      bestOffset = 0;
-      correlationOffset = 0;
-      tempOffset = 0;
-      for (; scanCount < 4; scanCount = scanCount + 1) {
-        let j = 0;
-        while (_SCAN_OFFSETS[scanCount][j]) {
-          tempOffset = correlationOffset + _SCAN_OFFSETS[scanCount][j];
-          if (tempOffset >= this.seekLength) {
-            break;
-          }
-          correlation = this.calculateCrossCorrelationStereo(2 * tempOffset, this.refMidBuffer);
-          if (correlation > bestCorrelation) {
-            bestCorrelation = correlation;
-            bestOffset = tempOffset;
-          }
-          j = j + 1;
-        }
-        correlationOffset = bestOffset;
-      }
-      return bestOffset;
-    }
-    preCalculateCorrelationReferenceStereo() {
-      let i = 0;
-      let context;
-      let temp;
-      for (; i < this.overlapLength; i = i + 1) {
-        temp = i * (this.overlapLength - i);
-        context = i * 2;
-        this.refMidBuffer[context] = this.midBuffer[context] * temp;
-        this.refMidBuffer[context + 1] = this.midBuffer[context + 1] * temp;
-      }
-    }
-    calculateCrossCorrelationStereo(mixingPosition, compare) {
-      const mixing = this._inputBuffer.vector;
-      mixingPosition += this._inputBuffer.startIndex;
-      let correlation = 0;
-      let i = 2;
-      const calcLength = 2 * this.overlapLength;
-      let mixingOffset;
-      for (; i < calcLength; i = i + 2) {
-        mixingOffset = i + mixingPosition;
-        correlation += mixing[mixingOffset] * compare[i] + mixing[mixingOffset + 1] * compare[i + 1];
-      }
-      return correlation;
-    }
-    overlap(overlapPosition) {
-      this.overlapStereo(2 * overlapPosition);
-    }
-    overlapStereo(inputPosition) {
-      const input = this._inputBuffer.vector;
-      inputPosition += this._inputBuffer.startIndex;
-      const output = this._outputBuffer.vector;
-      const outputPosition = this._outputBuffer.endIndex;
-      let i = 0;
-      let context;
-      let tempFrame;
-      const frameScale = 1 / this.overlapLength;
-      let fi;
-      let inputOffset;
-      let outputOffset;
-      for (; i < this.overlapLength; i = i + 1) {
-        tempFrame = (this.overlapLength - i) * frameScale;
-        fi = i * frameScale;
-        context = 2 * i;
-        inputOffset = context + inputPosition;
-        outputOffset = context + outputPosition;
-        output[outputOffset + 0] = input[inputOffset + 0] * fi + this.midBuffer[context + 0] * tempFrame;
-        output[outputOffset + 1] = input[inputOffset + 1] * fi + this.midBuffer[context + 1] * tempFrame;
-      }
-    }
-    process() {
-      let offset;
-      let temp;
-      let overlapSkip;
-      if (this.midBuffer === null) {
-        if (this._inputBuffer.frameCount < this.overlapLength) {
-          return;
-        }
-        this.midBuffer = new Float32Array(this.overlapLength * 2);
-        this._inputBuffer.receiveSamples(this.midBuffer, this.overlapLength);
-      }
-      while (this._inputBuffer.frameCount >= this.sampleReq) {
-        offset = this.seekBestOverlapPosition();
-        this._outputBuffer.ensureAdditionalCapacity(this.overlapLength);
-        this.overlap(Math.floor(offset));
-        this._outputBuffer.put(this.overlapLength);
-        temp = this.seekWindowLength - 2 * this.overlapLength;
-        if (temp > 0) {
-          this._outputBuffer.putBuffer(this._inputBuffer, offset + this.overlapLength, temp);
-        }
-        const start = this._inputBuffer.startIndex + 2 * (offset + this.seekWindowLength - this.overlapLength);
-        this.midBuffer.set(this._inputBuffer.vector.subarray(start, start + 2 * this.overlapLength));
-        this.skipFract += this.nominalSkip;
-        overlapSkip = Math.floor(this.skipFract);
-        this.skipFract -= overlapSkip;
-        this._inputBuffer.receive(overlapSkip);
-      }
-    }
-  }
-  const testFloatEqual = function (a, b) {
-    return (a > b ? a - b : b - a) > 1e-10;
+  const ENGINE_WSOLA = "wsola";
+  const ENGINE_PHASE = "phase";
+  const WORKLET_NAMES = {
+    [ENGINE_WSOLA]: "soundtouch-processor",
+    [ENGINE_PHASE]: "phase-vocoder-processor",
   };
+  const PHASE_ENTER_SPEED = 0.45;
+  const PHASE_EXIT_SPEED = 0.55;
+  const PHASE_FFT_SIZE = 2048;
+  const PHASE_OVERLAP_FACTOR = 8;
+  const WSOLA_QUALITY_ENTER_SPEED = 0.7;
+  const WSOLA_QUALITY_EXIT_SPEED = 0.76;
+  const WSOLA_PROFILE_LOW_LATENCY = "low-latency";
+  const WSOLA_PROFILE_SLOW_QUALITY = "slow-quality";
+  // Short windows keep normal playback and pitch-only changes responsive.
+  // During a substantial slowdown, SoundTouch's tempo-aware windows reduce
+  // the repeated-segment hum while a longer overlap hides the joins.
+  const WSOLA_SETTINGS = {
+    [WSOLA_PROFILE_LOW_LATENCY]: {
+      sequenceMs: 50,
+      seekWindowMs: 15,
+      overlapMs: 8,
+      quickSeek: true,
+    },
+    [WSOLA_PROFILE_SLOW_QUALITY]: {
+      sequenceMs: 0,
+      seekWindowMs: 0,
+      overlapMs: 12,
+      quickSeek: true,
+    },
+  };
+  const ENGINE_WARMUP_SECONDS = 0.06;
+  const ENGINE_CROSSFADE_SECONDS = 0.05;
+  const PITCH_RAMP_SECONDS = 0.04;
+  const REVERB_RAMP_SECONDS = 0.035;
+  const REVERB_CONFIG_CROSSFADE_SECONDS = 0.12;
+  const DEFAULT_REVERB_SIZE = 1;
+  const DEFAULT_REVERB_DECAY = 2.8;
+  const DEFAULT_REVERB_TONE = 0.55;
+  const DEFAULT_REVERB_PREDELAY = 0.016;
+  const REVERB_IR_CACHE_LIMIT = 3;
+  const DEBUG_EVENT_LIMIT = 160;
 
-  class SoundTouch {
-    constructor() {
-      this.transposer = new RateTransposer(false);
-      this.stretch = new Stretch(false);
-      this._inputBuffer = new FifoSampleBuffer();
-      this._intermediateBuffer = new FifoSampleBuffer();
-      this._outputBuffer = new FifoSampleBuffer();
-      this._rate = 0;
-      this._tempo = 0;
-      this.virtualPitch = 1.0;
-      this.virtualRate = 1.0;
-      this.virtualTempo = 1.0;
-      this.calculateEffectiveRateAndTempo();
-    }
-    clear() {
-      this.transposer.clear();
-      this.stretch.clear();
-    }
-    clone() {
-      const result = new SoundTouch();
-      result.rate = this.rate;
-      result.tempo = this.tempo;
-      return result;
-    }
-    get rate() {
-      return this._rate;
-    }
-    set rate(rate) {
-      this.virtualRate = rate;
-      this.calculateEffectiveRateAndTempo();
-    }
-    set rateChange(rateChange) {
-      this._rate = 1.0 + 0.01 * rateChange;
-    }
-    get tempo() {
-      return this._tempo;
-    }
-    set tempo(tempo) {
-      this.virtualTempo = tempo;
-      this.calculateEffectiveRateAndTempo();
-    }
-    set tempoChange(tempoChange) {
-      this.tempo = 1.0 + 0.01 * tempoChange;
-    }
-    set pitch(pitch) {
-      this.virtualPitch = pitch;
-      this.calculateEffectiveRateAndTempo();
-    }
-    set pitchOctaves(pitchOctaves) {
-      this.pitch = Math.exp(0.69314718056 * pitchOctaves);
-      this.calculateEffectiveRateAndTempo();
-    }
-    set pitchSemitones(pitchSemitones) {
-      this.pitchOctaves = pitchSemitones / 12.0;
-    }
-    get inputBuffer() {
-      return this._inputBuffer;
-    }
-    get outputBuffer() {
-      return this._outputBuffer;
-    }
-    calculateEffectiveRateAndTempo() {
-      const previousTempo = this._tempo;
-      const previousRate = this._rate;
-      this._tempo = this.virtualTempo / this.virtualPitch;
-      this._rate = this.virtualRate * this.virtualPitch;
-      if (testFloatEqual(this._tempo, previousTempo)) {
-        this.stretch.tempo = this._tempo;
-      }
-      if (testFloatEqual(this._rate, previousRate)) {
-        this.transposer.rate = this._rate;
-      }
-      if (this._rate > 1.0) {
-        if (this._outputBuffer != this.transposer.outputBuffer) {
-          this.stretch.inputBuffer = this._inputBuffer;
-          this.stretch.outputBuffer = this._intermediateBuffer;
-          this.transposer.inputBuffer = this._intermediateBuffer;
-          this.transposer.outputBuffer = this._outputBuffer;
-        }
-      } else {
-        if (this._outputBuffer != this.stretch.outputBuffer) {
-          this.transposer.inputBuffer = this._inputBuffer;
-          this.transposer.outputBuffer = this._intermediateBuffer;
-          this.stretch.inputBuffer = this._intermediateBuffer;
-          this.stretch.outputBuffer = this._outputBuffer;
-        }
-      }
-    }
-    process() {
-      if (this._rate > 1.0) {
-        this.stretch.process();
-        this.transposer.process();
-      } else {
-        this.transposer.process();
-        this.stretch.process();
-      }
-    }
+  function setParamImmediately(param, value, now) {
+    param.cancelScheduledValues(now);
+    param.setValueAtTime(value, now);
   }
 
-  // =====================================================================
-  // Shifter: feed live audio through SoundTouch with an output FIFO so the
-  // ScriptProcessor always has a full block to emit (no dropouts).
-  // =====================================================================
-  const BLOCK = 1024;     // ScriptProcessor block size (frames)
-  const PRIME = 8192;     // output cushion before reading (covers SoundTouch's
-                          // chunked output bursts so the FIFO never underruns)
-  const MAXFIFO = 24576;  // cap so latency/memory stay bounded under drift
+  function rampPositiveParam(param, value, now) {
+    if (typeof param.cancelAndHoldAtTime === "function") {
+      param.cancelAndHoldAtTime(now);
+    } else {
+      param.cancelScheduledValues(now);
+      param.setValueAtTime(Math.max(param.value, 0.0001), now);
+    }
+    param.exponentialRampToValueAtTime(value, now + PITCH_RAMP_SECONDS);
+  }
 
-  function createShifter(ctx) {
-    const st = new SoundTouch();
-    st.stretch.setParameters(ctx.sampleRate);
-    try { st.stretch.quickSeek = false; } catch (e) {} // full search = better quality
-    st.tempo = 1; st.rate = 1; st.pitch = 1;
+  function rampLinearParam(param, value, now, duration) {
+    if (typeof param.cancelAndHoldAtTime === "function") {
+      param.cancelAndHoldAtTime(now);
+    } else {
+      param.cancelScheduledValues(now);
+      param.setValueAtTime(param.value, now);
+    }
+    param.linearRampToValueAtTime(value, now + duration);
+  }
 
-    let curPF = 1;
-    let primed = false;
-    let fifo = new Float32Array(1 << 16); // interleaved stereo output queue
-    let fifoFrames = 0;
-    let recv = new Float32Array(1 << 16);
-    const interIn = new Float32Array(BLOCK * 2);
+  function wsolaProfileFor(playbackRate) {
+    if (
+      selectedWsolaProfile === WSOLA_PROFILE_LOW_LATENCY &&
+      playbackRate < WSOLA_QUALITY_ENTER_SPEED
+    ) {
+      selectedWsolaProfile = WSOLA_PROFILE_SLOW_QUALITY;
+    } else if (
+      selectedWsolaProfile === WSOLA_PROFILE_SLOW_QUALITY &&
+      playbackRate > WSOLA_QUALITY_EXIT_SPEED
+    ) {
+      selectedWsolaProfile = WSOLA_PROFILE_LOW_LATENCY;
+    }
+    return selectedWsolaProfile;
+  }
 
-    function pushRecv(frames) {
-      const need = (fifoFrames + frames) * 2;
-      if (need > fifo.length) {
-        const nb = new Float32Array(Math.max(need, fifo.length * 2));
-        nb.set(fifo.subarray(0, fifoFrames * 2));
-        fifo = nb;
-      }
-      fifo.set(recv.subarray(0, frames * 2), fifoFrames * 2);
-      fifoFrames += frames;
-      // Bound the queue: if SoundTouch ran ahead, drop the oldest frames.
-      if (fifoFrames > MAXFIFO) {
-        const drop = fifoFrames - MAXFIFO;
-        fifo.copyWithin(0, drop * 2, fifoFrames * 2);
-        fifoFrames = MAXFIFO;
-      }
+  function createShifter(audioContext, engine, playbackRate) {
+    const processorOptions = {
+      sampleBufferType: "circular",
+      interpolationStrategy: "lanczos",
+    };
+    if (engine === ENGINE_PHASE) {
+      processorOptions.fftSize = PHASE_FFT_SIZE;
+      processorOptions.overlapFactor = PHASE_OVERLAP_FACTOR;
     }
 
-    const node = ctx.createScriptProcessor(BLOCK, 2, 2);
-    node.onaudioprocess = (ev) => {
-      const inB = ev.inputBuffer, outB = ev.outputBuffer;
-      const inL = inB.getChannelData(0);
-      const inR = inB.numberOfChannels > 1 ? inB.getChannelData(1) : inL;
-      const outL = outB.getChannelData(0), outR = outB.getChannelData(1);
-      const n = outL.length;
+    const node = new AudioWorkletNode(audioContext, WORKLET_NAMES[engine], {
+      numberOfInputs: 1,
+      numberOfOutputs: 1,
+      outputChannelCount: [2],
+      processorOptions,
+    });
+    const pitchParam = node.parameters.get("pitch");
+    const semitoneParam = node.parameters.get("pitchSemitones");
+    const playbackRateParam = node.parameters.get("playbackRate");
+    const wsolaProfile =
+      engine === ENGINE_WSOLA ? wsolaProfileFor(playbackRate) : null;
+    let currentPitch = null;
+    let currentPlaybackRate = null;
+    let metrics = null;
+    let lastUnderrunCount = 0;
+    let pendingUnderruns = 0;
+    let lastUnderrunReportAt = 0;
 
-      // Bypass at unity — clean passthrough.
-      if (Math.abs(curPF - 1) < 0.005) {
-        outL.set(inL); outR.set(inR);
-        if (primed) { primed = false; fifoFrames = 0; try { st.clear(); } catch (e) {} }
-        return;
+    setParamImmediately(semitoneParam, 0, audioContext.currentTime);
+    if (engine === ENGINE_WSOLA) {
+      node.port.postMessage({
+        type: "set-stretch-parameters",
+        params: WSOLA_SETTINGS[wsolaProfile],
+      });
+    }
+    node.port.onmessage = ({ data }) => {
+      if (!data || data.type !== "metrics") return;
+      metrics = data;
+      if (data.underrunCount > lastUnderrunCount) {
+        pendingUnderruns += data.underrunCount - lastUnderrunCount;
+        const now = performance.now();
+        if (!lastUnderrunReportAt || now - lastUnderrunReportAt >= 2000) {
+          recordDebug("worklet-underrun", {
+            engine,
+            wsolaProfile,
+            added: pendingUnderruns,
+            total: data.underrunCount,
+            framesBuffered: data.framesBuffered,
+          });
+          pendingUnderruns = 0;
+          lastUnderrunReportAt = now;
+        }
       }
-
-      for (let i = 0; i < n; i++) { interIn[2 * i] = inL[i]; interIn[2 * i + 1] = inR[i]; }
-      st.inputBuffer.putSamples(interIn, 0, n);
-      st.process();
-      const got = st.outputBuffer.frameCount;
-      if (got > 0) {
-        if (recv.length < got * 2) recv = new Float32Array(got * 2);
-        st.outputBuffer.receiveSamples(recv, got);
-        pushRecv(got);
-      }
-
-      if (!primed) {
-        if (fifoFrames < PRIME) { outL.fill(0); outR.fill(0); return; }
-        primed = true;
-      }
-
-      const emit = Math.min(n, fifoFrames);
-      for (let i = 0; i < emit; i++) { outL[i] = fifo[2 * i]; outR[i] = fifo[2 * i + 1]; }
-      for (let i = emit; i < n; i++) { outL[i] = 0; outR[i] = 0; }
-      if (fifoFrames > emit) fifo.copyWithin(0, emit * 2, fifoFrames * 2);
-      fifoFrames -= emit;
+      lastUnderrunCount = data.underrunCount;
     };
 
     return {
+      engine,
+      wsolaProfile,
       node,
-      setPitch(pf) { if (pf !== curPF) { curPF = pf; st.pitch = pf; } },
-      reset() { try { st.clear(); } catch (e) {} fifoFrames = 0; primed = false; },
+      setControls(nextPitch, nextPlaybackRate, smoothPitch = true) {
+        const now = audioContext.currentTime;
+
+        // The rate mirror must change immediately with HTMLMediaElement's
+        // playbackRate; otherwise Speed temporarily leaks into audible pitch.
+        if (nextPlaybackRate !== currentPlaybackRate) {
+          setParamImmediately(playbackRateParam, nextPlaybackRate, now);
+          currentPlaybackRate = nextPlaybackRate;
+        }
+
+        if (nextPitch !== currentPitch) {
+          if (smoothPitch && currentPitch !== null) {
+            rampPositiveParam(pitchParam, nextPitch, now);
+          } else {
+            setParamImmediately(pitchParam, nextPitch, now);
+          }
+          currentPitch = nextPitch;
+        }
+      },
+      getMetrics() {
+        return metrics;
+      },
     };
   }
 
@@ -652,12 +182,30 @@
   // Wiring / state
   // =====================================================================
   let ctx = null;
-  const wired = new Map(); // mediaEl -> { source, shifter }
+  const wired = new Map(); // mediaEl -> { source, branches, primary, routed }
   let curPitch = 0;
   let curMicro = 0;
   let curSpeed = 1;
+  let curReverb = 0;
+  let curReverbMode = "simple";
+  let curReverbSize = DEFAULT_REVERB_SIZE;
+  let curReverbDecay = DEFAULT_REVERB_DECAY;
+  let curReverbTone = DEFAULT_REVERB_TONE;
+  let curReverbPreDelay = DEFAULT_REVERB_PREDELAY;
   let enabled = false;
   let lastHasMedia = null;
+  let selectedEngine = ENGINE_WSOLA;
+  let selectedWsolaProfile = WSOLA_PROFILE_LOW_LATENCY;
+  let workletUrls = null;
+  let workletsReady = null;
+  let applyGeneration = 0;
+  let reportedWorkletError = false;
+  let nativeFallbackActive = false;
+  let mediaApplyQueued = false;
+  const reverbImpulseCache = new Map();
+  const debugEvents = [];
+  const mediaDebugIds = new WeakMap();
+  let nextMediaDebugId = 1;
 
   // Native values are captured only for media controlled in this tab. Turning
   // the extension off restores them and stops future playbackRate writes.
@@ -666,37 +214,200 @@
   // Media elements that aren't necessarily attached to the DOM.
   // Some players (e.g. Spotify Web) play through detached HTMLMediaElements.
   const detachedMedia = new Set();
+  const observedDetachedMedia = new WeakSet();
+
+  function mediaDebugId(el) {
+    if (!mediaDebugIds.has(el)) mediaDebugIds.set(el, nextMediaDebugId++);
+    return mediaDebugIds.get(el);
+  }
+
+  function describeMedia(el) {
+    const source = el.currentSrc || el.src || "";
+    return {
+      id: mediaDebugId(el),
+      tag: el.tagName?.toLowerCase() || "media",
+      connected: el.isConnected,
+      paused: el.paused,
+      ended: el.ended,
+      readyState: el.readyState,
+      playbackRate: el.playbackRate,
+      defaultPlaybackRate: el.defaultPlaybackRate,
+      preservesPitch: el.preservesPitch,
+      mozPreservesPitch: el.mozPreservesPitch,
+      webkitPreservesPitch: el.webkitPreservesPitch,
+      sourceScheme: source.includes(":") ? source.split(":", 1)[0] : "none",
+      wired: wired.has(el),
+    };
+  }
+
+  function recordDebug(type, details = {}) {
+    debugEvents.push({
+      at: new Date().toISOString(),
+      elapsedMs: Math.round(performance.now()),
+      type,
+      visibility: document.visibilityState,
+      contextState: ctx?.state || "none",
+      ...details,
+    });
+    if (debugEvents.length > DEBUG_EVENT_LIMIT) {
+      debugEvents.splice(0, debugEvents.length - DEBUG_EVENT_LIMIT);
+    }
+  }
+
+  function debugSnapshot() {
+    return {
+      page: location.hostname,
+      visibility: document.visibilityState,
+      focused: document.hasFocus(),
+      enabled,
+      controls: {
+        pitch: curPitch,
+        micro: curMicro,
+        speed: curSpeed,
+        reverb: curReverb,
+      },
+      engine: selectedEngine,
+      nativeFallbackActive,
+      context: ctx
+        ? {
+            state: ctx.state,
+            sampleRate: ctx.sampleRate,
+            baseLatency: ctx.baseLatency,
+            outputLatency: ctx.outputLatency,
+            currentTime: ctx.currentTime,
+          }
+        : null,
+      media: getMedia().map(describeMedia),
+      processors: Array.from(wired.entries()).map(([el, node]) => ({
+        mediaId: mediaDebugId(el),
+        routed: node.routed,
+        sourceToEffects: node.sourceToEffects,
+        branches: Array.from(node.branches).map((branch) => ({
+          engine: branch.shifter.engine,
+          wsolaProfile: branch.shifter.wsolaProfile,
+          metrics: branch.shifter.getMetrics(),
+        })),
+      })),
+    };
+  }
+
+  Object.defineProperty(window, "__pitchShifterDebug", {
+    configurable: true,
+    value: {
+      snapshot: debugSnapshot,
+      events: () => debugEvents.slice(),
+      report: () => ({ snapshot: debugSnapshot(), events: debugEvents.slice() }),
+      clear: () => { debugEvents.length = 0; },
+    },
+  });
 
   // Catch media playback even when the element is not in document.body.
   const nativePlay = HTMLMediaElement.prototype.play;
 
   HTMLMediaElement.prototype.play = function (...args) {
     detachedMedia.add(this);
+    observeDetachedMedia(this);
 
     const result = nativePlay.apply(this, args);
 
-    // Let the page finish configuring the media element first (src, MediaKeys, etc.).
-    setTimeout(() => {
-      try {
-        apply();
-        postState();
-      } catch (e) {}
-    }, 0);
+    // Run after the page's synchronous play() setup without depending on a
+    // timer. Firefox can heavily delay timers while its window is minimized.
+    queueMediaApply();
 
     return result;
   };
 
   const mult = () => (curPitch + curMicro) / 12;
-  const ratio = () => Math.pow(2, mult());
-  const isActive = () => enabled && Math.abs(mult()) > 1e-6;
+  const desiredPitchRatio = () => Math.pow(2, mult());
 
-  function ensureCtx() {
+  function clampedNumber(value, min, max, fallback) {
+    const number = Number(value);
+    return Number.isFinite(number) ? Math.max(min, Math.min(max, number)) : fallback;
+  }
+
+  function readReverbControls(data) {
+    curReverb = clampedNumber(data.reverb, 0, 1, 0);
+    curReverbMode = data.reverbMode === "advanced" ? "advanced" : "simple";
+    curReverbSize = clampedNumber(
+      data.reverbSize,
+      0.5,
+      1.5,
+      DEFAULT_REVERB_SIZE,
+    );
+    curReverbDecay = clampedNumber(
+      data.reverbDecay,
+      0.8,
+      5,
+      DEFAULT_REVERB_DECAY,
+    );
+    curReverbTone = clampedNumber(
+      data.reverbTone,
+      0,
+      1,
+      DEFAULT_REVERB_TONE,
+    );
+    curReverbPreDelay = clampedNumber(
+      data.reverbPreDelay,
+      0,
+      0.1,
+      DEFAULT_REVERB_PREDELAY,
+    );
+  }
+
+  // Hysteresis prevents the engine from toggling repeatedly while the slider
+  // hovers around 50%. Once phase mode starts below 45%, WSOLA only returns
+  // above 55%.
+  function chooseEngine() {
+    if (selectedEngine === ENGINE_WSOLA && curSpeed < PHASE_ENTER_SPEED) {
+      selectedEngine = ENGINE_PHASE;
+    } else if (selectedEngine === ENGINE_PHASE && curSpeed > PHASE_EXIT_SPEED) {
+      selectedEngine = ENGINE_WSOLA;
+    }
+    return selectedEngine;
+  }
+
+  // Pitch and Speed are independent controls. The official processor receives
+  // them separately and performs desiredPitch / playbackRate internally.
+  const needsShifter = () =>
+    enabled && (Math.abs(mult()) > 1e-6 || Math.abs(curSpeed - 1) > 1e-6);
+  const needsProcessing = () => needsShifter() || (enabled && curReverb > 1e-6);
+
+  function ensureCtx(requireWorklets = true) {
     if (!ctx) {
       const AC = window.AudioContext || window.webkitAudioContext;
-      ctx = new AC();
+      ctx = new AC({ latencyHint: "interactive" });
+      recordDebug("context-created", {
+        sampleRate: ctx.sampleRate,
+        baseLatency: ctx.baseLatency,
+        outputLatency: ctx.outputLatency,
+      });
+      ctx.addEventListener("statechange", () => {
+        recordDebug("context-state", { state: ctx.state });
+        if (enabled && ctx.state === "suspended") {
+          ctx.resume().catch((error) => {
+            recordDebug("context-resume-failed", {
+              name: error?.name,
+              message: error?.message,
+            });
+          });
+        }
+      });
     }
     if (ctx.state === "suspended") ctx.resume().catch(() => {});
-    return ctx;
+    if (!requireWorklets) return Promise.resolve(ctx);
+    if (!workletUrls?.wsola || !workletUrls?.phase) {
+      return Promise.reject(new Error("PitchShifter worklet URLs are not ready"));
+    }
+    if (!workletsReady) {
+      workletsReady = Promise.all([
+        ctx.audioWorklet.addModule(workletUrls.wsola),
+        ctx.audioWorklet.addModule(workletUrls.phase),
+      ]).catch((error) => {
+        workletsReady = null;
+        throw error;
+      });
+    }
+    return workletsReady.then(() => ctx);
   }
 
   function getMedia() {
@@ -712,30 +423,146 @@
     return Array.from(media);
   }
 
-  // Speed = native playback rate with pitch preserved (browser time-stretch).
-  function applySpeed() {
-    if (!enabled) return;
-    getMedia().forEach((el) => {
+  function queueMediaApply() {
+    if (mediaApplyQueued) return;
+    mediaApplyQueued = true;
+    queueMicrotask(() => {
+      mediaApplyQueued = false;
+      if (!enabled) return;
       try {
-        if (!nativeMediaState.has(el)) {
-          nativeMediaState.set(el, {
-            playbackRate: el.playbackRate,
-            preservesPitch: el.preservesPitch,
-            mozPreservesPitch: el.mozPreservesPitch,
-            webkitPreservesPitch: el.webkitPreservesPitch,
-          });
-        }
-        el.preservesPitch = true;
-        el.mozPreservesPitch = true;
-        el.webkitPreservesPitch = true;
-        if (el.playbackRate !== curSpeed) el.playbackRate = curSpeed;
+        apply();
+        postState();
       } catch (e) {}
     });
+  }
+
+  function isMediaElement(value) {
+    return value instanceof HTMLMediaElement;
+  }
+
+  // Spotify and other players may restore playbackRate/defaultPlaybackRate
+  // while changing tracks or moving into background playback. The worklet
+  // must see the same rate as the media element or its pitch compensation is
+  // mathematically wrong, so reassert the selected speed on the ratechange
+  // event instead of polling with a background-throttled timer.
+  function handleMediaLifecycle(event) {
+    const el = event.target;
+    if (!isMediaElement(el) || !enabled) return;
+
+    if (needsShifter()) {
+      const expectedPreservesPitch = nativeFallbackActive;
+      if (
+        Math.abs(el.playbackRate - curSpeed) > 1e-6 ||
+        Math.abs(el.defaultPlaybackRate - curSpeed) > 1e-6 ||
+        el.preservesPitch !== expectedPreservesPitch
+      ) {
+        recordDebug("media-setting-changed", {
+          event: event.type,
+          expectedSpeed: curSpeed,
+          expectedPreservesPitch,
+          media: describeMedia(el),
+        });
+      }
+      applyControlledSpeed(el, nativeFallbackActive);
+    }
+    if (event.type !== "timeupdate" && needsProcessing() && !wired.has(el)) {
+      queueMediaApply();
+    }
+  }
+
+  function observeDetachedMedia(el) {
+    if (observedDetachedMedia.has(el)) return;
+    observedDetachedMedia.add(el);
+    ["ratechange", "play", "playing", "loadedmetadata", "timeupdate"].forEach((type) => {
+      el.addEventListener(type, handleMediaLifecycle);
+    });
+  }
+
+  // Capture-phase listeners also cover autoplay and media started through
+  // native controls, whose play() call may not pass through page JavaScript.
+  ["ratechange", "play", "playing", "loadedmetadata", "timeupdate"].forEach((type) => {
+    document.addEventListener(type, handleMediaLifecycle, true);
+  });
+
+  function handlePageActivity(event) {
+    recordDebug(`page-${event.type}`, {
+      focused: document.hasFocus(),
+      media: getMedia().map(describeMedia),
+    });
+    queueMicrotask(() => {
+      if (!enabled) return;
+      if (needsShifter()) {
+        getMedia().forEach((el) => applyControlledSpeed(el, nativeFallbackActive));
+      }
+      queueMediaApply();
+    });
+  }
+
+  document.addEventListener("visibilitychange", handlePageActivity);
+  window.addEventListener("blur", handlePageActivity);
+  window.addEventListener("focus", handlePageActivity);
+
+  function captureNativeState(el) {
+    if (!nativeMediaState.has(el)) {
+      nativeMediaState.set(el, {
+        playbackRate: el.playbackRate,
+        defaultPlaybackRate: el.defaultPlaybackRate,
+        preservesPitch: el.preservesPitch,
+        mozPreservesPitch: el.mozPreservesPitch,
+        webkitPreservesPitch: el.webkitPreservesPitch,
+      });
+    }
+  }
+
+  function applyControlledSpeed(el, preservePitch) {
+    try {
+      captureNativeState(el);
+      if (el.preservesPitch !== preservePitch) {
+        el.preservesPitch = preservePitch;
+      }
+      if ("mozPreservesPitch" in el && el.mozPreservesPitch !== preservePitch) {
+        el.mozPreservesPitch = preservePitch;
+      }
+      if (
+        "webkitPreservesPitch" in el &&
+        el.webkitPreservesPitch !== preservePitch
+      ) {
+        el.webkitPreservesPitch = preservePitch;
+      }
+      if (Math.abs(el.defaultPlaybackRate - curSpeed) > 1e-6) {
+        el.defaultPlaybackRate = curSpeed;
+      }
+      if (Math.abs(el.playbackRate - curSpeed) > 1e-6) {
+        el.playbackRate = curSpeed;
+      }
+    } catch (e) {}
+  }
+
+  // The browser changes playback speed; our SoundTouch node, not Firefox's
+  // built-in algorithm, preserves the chosen audible pitch.
+  function applySpeed() {
+    if (!enabled) return;
+    nativeFallbackActive = false;
+    // Reverb by itself must not touch the page's playback or pitch-preservation
+    // settings. If Pitch/Speed just returned to neutral, restore them now.
+    if (!needsShifter()) {
+      restoreSpeed();
+      return;
+    }
+    getMedia().forEach((el) => applyControlledSpeed(el, false));
+  }
+
+  // If a browser cannot load the packaged worklet, keep Speed usable with its
+  // native pitch preservation instead of leaving media at the wrong pitch.
+  function applyNativeSpeedFallback() {
+    nativeFallbackActive = true;
+    getMedia().forEach((el) => applyControlledSpeed(el, true));
   }
 
   function restoreSpeed() {
     nativeMediaState.forEach((state, el) => {
       try {
+        el.defaultPlaybackRate = state.defaultPlaybackRate;
         el.playbackRate = state.playbackRate;
         if (state.preservesPitch !== undefined) el.preservesPitch = state.preservesPitch;
         if (state.mozPreservesPitch !== undefined) el.mozPreservesPitch = state.mozPreservesPitch;
@@ -745,10 +572,338 @@
       } catch (e) {}
     });
     nativeMediaState.clear();
+    nativeFallbackActive = false;
   }
 
-  // Route one element: source -> shifter -> destination. The shifter passes
-  // audio through untouched while pitch is at 0.
+  function getReverbSettings() {
+    const advanced = curReverbMode === "advanced";
+    const size = advanced ? curReverbSize : DEFAULT_REVERB_SIZE;
+    const decay = advanced ? curReverbDecay : DEFAULT_REVERB_DECAY;
+    const tone = advanced ? curReverbTone : DEFAULT_REVERB_TONE;
+    const preDelay = advanced ? curReverbPreDelay : DEFAULT_REVERB_PREDELAY;
+    return {
+      size,
+      decay,
+      tone,
+      preDelay,
+      impulseKey: `${size.toFixed(2)}:${decay.toFixed(1)}`,
+    };
+  }
+
+  const reverbToneFrequency = (tone) => 2500 * Math.pow(7.2, tone);
+
+  // A few recently used room shapes are cached and shared by all media in the
+  // AudioContext. Tone and pre-delay live in realtime nodes and need no rebuild.
+  function getReverbImpulse(settings) {
+    const cached = reverbImpulseCache.get(settings.impulseKey);
+    if (cached) return cached;
+    const sampleRate = ctx.sampleRate;
+    const length = Math.ceil(sampleRate * settings.decay);
+    const lateStart = Math.floor(sampleRate * 0.042 * settings.size);
+    const buffer = ctx.createBuffer(2, length, sampleRate);
+    const left = buffer.getChannelData(0);
+    const right = buffer.getChannelData(1);
+
+    // Discrete asymmetric reflections provide room shape and stereo location
+    // before the dense late field arrives.
+    const earlyReflections = [
+      [0, 0.56, 0.44],
+      [0.008, 0.31, 0.48],
+      [0.015, 0.40, -0.29],
+      [0.026, -0.25, 0.36],
+      [0.039, 0.23, 0.29],
+      [0.055, -0.18, -0.24],
+      [0.074, 0.15, -0.19],
+      [0.098, 0.11, 0.15],
+      [0.127, -0.09, 0.12],
+    ];
+    earlyReflections.forEach(([time, leftGain, rightGain]) => {
+      const index = Math.floor(sampleRate * time * settings.size);
+      if (index < length) {
+        left[index] += leftGain;
+        right[index] += rightGain;
+      }
+    });
+
+    // Prime, mutually incommensurate delays prevent a single metallic echo.
+    // Householder feedback mixes every line into all the others on each pass.
+    const baseDelayLengths = [
+      1423, 1559, 1663, 1789, 1907, 2039,
+      2179, 2293, 2411, 2543, 2671, 2797,
+    ];
+    const delayLengths = baseDelayLengths.map((frames) =>
+      Math.max(3, Math.round((frames * sampleRate * settings.size) / 48000) | 1)
+    );
+    const delayLines = delayLengths.map((frames) => new Float32Array(frames));
+    const delayIndices = new Int32Array(delayLengths.length);
+    const dampingState = new Float64Array(delayLengths.length);
+    const delayed = new Float64Array(delayLengths.length);
+    const inputSigns = [1, -1, 1, 1, -1, 1, -1, -1, 1, -1, -1, 1];
+    const leftSigns = [1, 1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1];
+    const rightSigns = [1, -1, 1, 1, -1, 1, -1, -1, 1, -1, 1, -1];
+    const feedback = delayLengths.map((frames, index) =>
+      Math.pow(
+        10,
+        (-3 * (frames / sampleRate)) /
+          (settings.decay * (0.875 + (index % 4) * 0.036)),
+      )
+    );
+    const outputNormalization = 1 / Math.sqrt(delayLengths.length);
+
+    // The diffuse layer fills the tiny gaps between FDN echoes. Its low, mid
+    // and high bands decay at different rates, as they do in a furnished room.
+    let seed = 0x51f15e;
+    let commonLow = 0;
+    let commonMid = 0;
+    let sideLow = 0;
+    let sideMid = 0;
+    let lowEnvelope = 1;
+    let midEnvelope = 1;
+    let highEnvelope = 1;
+    const lowDecay = Math.pow(10, -3 / (settings.decay * sampleRate));
+    const midDecay = Math.pow(10, -3 / (settings.decay * 0.77 * sampleRate));
+    const highDecay = Math.pow(10, -3 / (settings.decay * 0.34 * sampleRate));
+
+    for (let frame = 0; frame < length; frame++) {
+      let sum = 0;
+      let outputLeft = 0;
+      let outputRight = 0;
+      for (let line = 0; line < delayLines.length; line++) {
+        const raw = delayLines[line][delayIndices[line]];
+        const filtered = raw * 0.68 + dampingState[line] * 0.32;
+        dampingState[line] = filtered;
+        delayed[line] = filtered;
+        sum += filtered;
+        outputLeft += filtered * leftSigns[line];
+        outputRight += filtered * rightSigns[line];
+      }
+
+      const injection = frame === 0 ? 1 : 0;
+      for (let line = 0; line < delayLines.length; line++) {
+        const mixed = delayed[line] - (2 * sum) / delayLines.length;
+        delayLines[line][delayIndices[line]] =
+          injection * inputSigns[line] + mixed * feedback[line];
+        delayIndices[line] = (delayIndices[line] + 1) % delayLengths[line];
+      }
+
+      const time = frame / sampleRate;
+      const flutter =
+        1 +
+        0.025 * Math.sin(2 * Math.PI * 0.37 * time) +
+        0.018 * Math.sin(2 * Math.PI * 0.61 * time + 0.8);
+      const endFade = Math.min(1, (length - frame) / (sampleRate * 0.18));
+      const commonOutput = sum * 0.14;
+      left[frame] +=
+        (outputLeft * 0.86 + commonOutput) *
+        outputNormalization * 1.45 * flutter * endFade;
+      right[frame] +=
+        (outputRight * 0.86 + commonOutput) *
+        outputNormalization * 1.45 * flutter * endFade;
+
+      if (frame >= lateStart) {
+        seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+        const commonNoise = (seed / 0x100000000) * 2 - 1;
+        seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+        const sideNoise = (seed / 0x100000000) * 2 - 1;
+        commonLow += 0.025 * (commonNoise - commonLow);
+        commonMid += 0.2 * (commonNoise - commonMid);
+        sideLow += 0.025 * (sideNoise - sideLow);
+        sideMid += 0.2 * (sideNoise - sideMid);
+
+        const common =
+          commonLow * 0.62 * lowEnvelope +
+          (commonMid - commonLow) * 0.78 * midEnvelope +
+          (commonNoise - commonMid) * 0.2 * highEnvelope;
+        const side =
+          sideLow * 0.62 * lowEnvelope +
+          (sideMid - sideLow) * 0.78 * midEnvelope +
+          (sideNoise - sideMid) * 0.2 * highEnvelope;
+        const lateTime = (frame - lateStart) / sampleRate;
+        const density = 1 - Math.exp(-lateTime * 52);
+        const diffuseScale = density * flutter * endFade * 0.075;
+        left[frame] += (common * 0.78 + side * 0.48) * diffuseScale;
+        right[frame] += (common * 0.78 - side * 0.48) * diffuseScale;
+        lowEnvelope *= lowDecay;
+        midEnvelope *= midDecay;
+        highEnvelope *= highDecay;
+      }
+    }
+
+    reverbImpulseCache.set(settings.impulseKey, buffer);
+    while (reverbImpulseCache.size > REVERB_IR_CACHE_LIMIT) {
+      reverbImpulseCache.delete(reverbImpulseCache.keys().next().value);
+    }
+    return buffer;
+  }
+
+  function createEffects() {
+    const input = ctx.createGain();
+    const dry = ctx.createGain();
+    setParamImmediately(dry.gain, 1, ctx.currentTime);
+    input.connect(dry);
+    dry.connect(ctx.destination);
+    return {
+      input,
+      dry,
+      wetBranches: new Set(),
+      primaryWet: null,
+      mix: null,
+      generation: 0,
+    };
+  }
+
+  function setWetBranchRealtime(branch, settings, smooth = true) {
+    const now = ctx.currentTime;
+    const toneFrequency = Math.min(
+      ctx.sampleRate * 0.45,
+      reverbToneFrequency(settings.tone),
+    );
+    if (smooth) {
+      rampLinearParam(branch.preDelay.delayTime, settings.preDelay, now, REVERB_RAMP_SECONDS);
+      rampLinearParam(branch.tone.frequency, toneFrequency, now, REVERB_RAMP_SECONDS);
+    } else {
+      setParamImmediately(branch.preDelay.delayTime, settings.preDelay, now);
+      setParamImmediately(branch.tone.frequency, toneFrequency, now);
+    }
+  }
+
+  function createWetBranch(effects, settings, initialGain) {
+    const preDelay = ctx.createDelay(0.12);
+    const convolver = ctx.createConvolver();
+    const tone = ctx.createBiquadFilter();
+    const gain = ctx.createGain();
+    convolver.buffer = getReverbImpulse(settings);
+    convolver.normalize = true;
+    tone.type = "lowpass";
+    setParamImmediately(tone.Q, 0.7, ctx.currentTime);
+    setParamImmediately(gain.gain, initialGain, ctx.currentTime);
+    const branch = {
+      preDelay,
+      convolver,
+      tone,
+      gain,
+      impulseKey: settings.impulseKey,
+    };
+    setWetBranchRealtime(branch, settings, false);
+    effects.input.connect(preDelay);
+    preDelay.connect(convolver);
+    convolver.connect(tone);
+    tone.connect(gain);
+    gain.connect(ctx.destination);
+    effects.wetBranches.add(branch);
+    return branch;
+  }
+
+  function disconnectWetBranch(effects, branch) {
+    if (!branch || !effects.wetBranches.has(branch)) return;
+    try { effects.input.disconnect(branch.preDelay); } catch (e) {}
+    try { branch.preDelay.disconnect(); } catch (e) {}
+    try { branch.convolver.disconnect(); } catch (e) {}
+    try { branch.tone.disconnect(); } catch (e) {}
+    try { branch.gain.disconnect(); } catch (e) {}
+    effects.wetBranches.delete(branch);
+    if (effects.primaryWet === branch) effects.primaryWet = null;
+  }
+
+  function disconnectWet(effects) {
+    Array.from(effects.wetBranches).forEach((branch) =>
+      disconnectWetBranch(effects, branch)
+    );
+  }
+
+  function ensureWetConfiguration(effects, settings, wetLevel, smooth) {
+    if (effects.primaryWet?.impulseKey === settings.impulseKey) {
+      effects.wetBranches.forEach((branch) =>
+        setWetBranchRealtime(branch, settings, smooth)
+      );
+      return false;
+    }
+
+    const oldBranches = Array.from(effects.wetBranches);
+    const replacement = createWetBranch(effects, settings, oldBranches.length ? 0 : wetLevel);
+    effects.primaryWet = replacement;
+    if (!oldBranches.length || !smooth) {
+      oldBranches.forEach((branch) => disconnectWetBranch(effects, branch));
+      setParamImmediately(replacement.gain.gain, wetLevel, ctx.currentTime);
+      return true;
+    }
+
+    const now = ctx.currentTime;
+    oldBranches.forEach((branch) => {
+      setWetBranchRealtime(branch, settings);
+      rampLinearParam(
+        branch.gain.gain,
+        0,
+        now,
+        REVERB_CONFIG_CROSSFADE_SECONDS,
+      );
+    });
+    rampLinearParam(
+      replacement.gain.gain,
+      wetLevel,
+      now,
+      REVERB_CONFIG_CROSSFADE_SECONDS,
+    );
+    setTimeout(() => {
+      oldBranches.forEach((branch) => disconnectWetBranch(effects, branch));
+    }, (REVERB_CONFIG_CROSSFADE_SECONDS + 0.03) * 1000);
+    return true;
+  }
+
+  function setReverbMix(effects, mix, smooth = true, settings = getReverbSettings()) {
+    const normalizedMix = Math.max(0, Math.min(1, mix));
+    const generation = ++effects.generation;
+    const dryLevel = Math.cos(normalizedMix * Math.PI * 0.5);
+    const wetLevel = Math.sin(normalizedMix * Math.PI * 0.5);
+    const configurationChanged =
+      normalizedMix > 0
+        ? ensureWetConfiguration(effects, settings, wetLevel, smooth)
+        : false;
+    if (
+      effects.mix === normalizedMix &&
+      !configurationChanged &&
+      (normalizedMix === 0 || effects.primaryWet)
+    ) {
+      return;
+    }
+
+    const now = ctx.currentTime;
+    if (smooth && effects.mix !== null) {
+      rampLinearParam(effects.dry.gain, dryLevel, now, REVERB_RAMP_SECONDS);
+      if (!configurationChanged && effects.primaryWet) {
+        rampLinearParam(
+          effects.primaryWet.gain.gain,
+          wetLevel,
+          now,
+          REVERB_RAMP_SECONDS,
+        );
+      }
+    } else {
+      setParamImmediately(effects.dry.gain, dryLevel, now);
+      if (!configurationChanged && effects.primaryWet) {
+        setParamImmediately(effects.primaryWet.gain.gain, wetLevel, now);
+      }
+    }
+    effects.mix = normalizedMix;
+
+    if (normalizedMix === 0) {
+      if (!smooth) {
+        disconnectWet(effects);
+      } else {
+        effects.wetBranches.forEach((branch) =>
+          rampLinearParam(branch.gain.gain, 0, now, REVERB_RAMP_SECONDS)
+        );
+        setTimeout(() => {
+          if (effects.generation === generation && effects.mix === 0) {
+            disconnectWet(effects);
+          }
+        }, (REVERB_RAMP_SECONDS + 0.02) * 1000);
+      }
+    }
+  }
+
+  // Capture one element. A normal activation uses one wet branch; a temporary
+  // second branch is only present while changing engines.
   function wire(el) {
     if (wired.has(el)) return wired.get(el);
     let source;
@@ -756,46 +911,190 @@
       source = ctx.createMediaElementSource(el);
     } catch (e) {
       // Already captured, or cross-origin without CORS.
+      recordDebug("wire-failed", {
+        media: describeMedia(el),
+        name: e?.name,
+        message: e?.message,
+      });
       return null;
     }
-    const shifter = createShifter(ctx);
-    const node = { source, shifter, routed: null };
-    route(node);
+    const node = {
+      source,
+      effects: createEffects(),
+      branches: new Set(),
+      primary: null,
+      routed: false,
+      sourceToEffects: false,
+    };
     wired.set(el, node);
+    try {
+      route(node);
+    } catch (error) {
+      // createMediaElementSource permanently captures the element, so always
+      // leave it connected even if a worklet node fails to construct.
+      try { source.connect(ctx.destination); } catch (e) {}
+      throw error;
+    }
+    recordDebug("wire-success", { media: describeMedia(el) });
     return node;
   }
 
-  // When neutral (pitch 0), route the element straight to the output so the
-  // shifter and its latency are completely out of the path — exactly as if the
-  // effect were off. The shifter is only inserted while actually pitch-shifting.
-  function route(node) {
-    const active = isActive();
-    if (node.routed === active) return;
-    node.routed = active;
-    try { node.source.disconnect(); } catch (e) {}
-    try { node.shifter.node.disconnect(); } catch (e) {}
-    if (active) {
-      node.shifter.reset();
-      node.source.connect(node.shifter.node);
-      node.shifter.node.connect(ctx.destination);
-    } else {
+  function disconnectBranch(node, branch) {
+    if (!branch || !node.branches.has(branch)) return;
+    try { node.source.disconnect(branch.shifter.node); } catch (e) {}
+    try { branch.shifter.node.disconnect(); } catch (e) {}
+    try { branch.gain.disconnect(); } catch (e) {}
+    node.branches.delete(branch);
+    if (node.primary === branch) node.primary = null;
+  }
+
+  function disconnectBranches(node) {
+    Array.from(node.branches).forEach((branch) => disconnectBranch(node, branch));
+  }
+
+  function createBranch(node, engine, initialGain) {
+    const shifter = createShifter(ctx, engine, curSpeed);
+    const gain = ctx.createGain();
+    setParamImmediately(gain.gain, initialGain, ctx.currentTime);
+    shifter.setControls(desiredPitchRatio(), curSpeed, false);
+    node.source.connect(shifter.node);
+    shifter.node.connect(gain);
+    gain.connect(node.effects.input);
+    const branch = { shifter, gain };
+    node.branches.add(branch);
+    return branch;
+  }
+
+  function updateBranchControls(node, smoothPitch = true) {
+    node.branches.forEach((branch) => {
+      branch.shifter.setControls(desiredPitchRatio(), curSpeed, smoothPitch);
+    });
+  }
+
+  // Prime the replacement engine silently, then fade between the two. This
+  // avoids a mute/click at the WSOLA/phase-vocoder boundary. Old branches are
+  // discarded after every fade so buffered audio can never return later.
+  function switchEngine(node, engine) {
+    const desiredWsolaProfile =
+      engine === ENGINE_WSOLA ? wsolaProfileFor(curSpeed) : null;
+    if (
+      node.primary?.shifter.engine === engine &&
+      node.primary?.shifter.wsolaProfile === desiredWsolaProfile
+    ) {
+      return;
+    }
+    const oldBranches = Array.from(node.branches);
+    const replacement = createBranch(node, engine, 0);
+    node.primary = replacement;
+    updateBranchControls(node);
+
+    const now = ctx.currentTime;
+    const fadeStart = now + ENGINE_WARMUP_SECONDS;
+    const fadeEnd = fadeStart + ENGINE_CROSSFADE_SECONDS;
+
+    oldBranches.forEach((branch) => {
+      const gainParam = branch.gain.gain;
+      if (typeof gainParam.cancelAndHoldAtTime === "function") {
+        gainParam.cancelAndHoldAtTime(now);
+      } else {
+        gainParam.cancelScheduledValues(now);
+        gainParam.setValueAtTime(gainParam.value, now);
+      }
+      gainParam.setValueAtTime(gainParam.value, fadeStart);
+      gainParam.linearRampToValueAtTime(0, fadeEnd);
+    });
+
+    const replacementGain = replacement.gain.gain;
+    replacementGain.cancelScheduledValues(now);
+    replacementGain.setValueAtTime(0, fadeStart);
+    replacementGain.linearRampToValueAtTime(1, fadeEnd);
+
+    setTimeout(() => {
+      oldBranches.forEach((branch) => disconnectBranch(node, branch));
+    }, (ENGINE_WARMUP_SECONDS + ENGINE_CROSSFADE_SECONDS + 0.02) * 1000);
+  }
+
+  // Keep DSP out of the path when Pitch, Speed and Reverb are neutral. Entering from a
+  // neutral state starts a fresh processor; engine-to-engine changes crossfade.
+  function route(node, active = needsProcessing(), engine = selectedEngine) {
+    if (!active) {
+      if (!node.routed) return;
+      try { node.source.disconnect(); } catch (e) {}
+      disconnectBranches(node);
+      node.sourceToEffects = false;
+      setReverbMix(node.effects, 0, false);
       node.source.connect(ctx.destination);
+      node.routed = false;
+      return;
+    }
+
+    if (!node.routed) {
+      try { node.source.disconnect(); } catch (e) {}
+      disconnectBranches(node);
+      if (needsShifter()) {
+        node.primary = createBranch(node, engine, 1);
+        node.sourceToEffects = false;
+      } else {
+        node.source.connect(node.effects.input);
+        node.sourceToEffects = true;
+      }
+      node.routed = true;
+    } else if (needsShifter()) {
+      if (node.sourceToEffects) {
+        try { node.source.disconnect(node.effects.input); } catch (e) {}
+        node.sourceToEffects = false;
+        node.primary = createBranch(node, engine, 1);
+      } else {
+        switchEngine(node, engine);
+      }
+    } else {
+      disconnectBranches(node);
+      if (!node.sourceToEffects) {
+        node.source.connect(node.effects.input);
+        node.sourceToEffects = true;
+      }
     }
   }
 
   function applyNode(node) {
-    node.shifter.setPitch(ratio());
-    route(node);
+    route(node, needsProcessing(), selectedEngine);
+    if (node.routed) {
+      updateBranchControls(node);
+      setReverbMix(node.effects, curReverb);
+    }
   }
 
   function apply() {
+    const generation = ++applyGeneration;
     if (!enabled) return;
-    applySpeed();
-    if (isActive()) {
-      ensureCtx();
-      getMedia().forEach(wire);
+    chooseEngine();
+
+    if (!needsProcessing()) {
+      wired.forEach(applyNode);
+      applySpeed();
+      return;
     }
-    wired.forEach(applyNode);
+
+    ensureCtx(needsShifter())
+      .then(() => {
+        if (generation !== applyGeneration || !enabled) return;
+        reportedWorkletError = false;
+        // Build the impulse before createMediaElementSource captures playback,
+        // so the one-time setup cost cannot create an audible gap.
+        if (curReverb > 0) getReverbImpulse(getReverbSettings());
+        getMedia().forEach(wire);
+        wired.forEach(applyNode);
+        applySpeed();
+      })
+      .catch((error) => {
+        if (generation !== applyGeneration || !enabled) return;
+        applyNativeSpeedFallback();
+        wired.forEach((node) => route(node, false));
+        if (!reportedWorkletError) {
+          reportedWorkletError = true;
+          console.warn("PitchShifter could not start its AudioWorklet", error);
+        }
+      });
   }
 
   function postState() {
@@ -808,6 +1107,12 @@
         pitch: curPitch,
         micro: curMicro,
         speed: curSpeed,
+        reverb: curReverb,
+        reverbMode: curReverbMode,
+        reverbSize: curReverbSize,
+        reverbDecay: curReverbDecay,
+        reverbTone: curReverbTone,
+        reverbPreDelay: curReverbPreDelay,
       },
       "*"
     );
@@ -818,23 +1123,47 @@
     if (ev.source !== window) return;
     const d = ev.data;
     if (!d || d.source !== "pitchshifter-cs") return;
-    if (d.type === "setPitch") {
+    if (
+      d.type === "initWorklets" &&
+      typeof d.urls?.wsola === "string" &&
+      typeof d.urls?.phase === "string"
+    ) {
+      if (
+        workletUrls?.wsola !== d.urls.wsola ||
+        workletUrls?.phase !== d.urls.phase
+      ) {
+        workletUrls = { wsola: d.urls.wsola, phase: d.urls.phase };
+        workletsReady = null;
+      }
+      if (enabled) apply();
+    } else if (d.type === "setPitch") {
       enabled = d.enabled !== false;
       curPitch = Number(d.pitch) || 0;
       curMicro = Number(d.micro) || 0;
       curSpeed = Number(d.speed) || 1;
+      readReverbControls(d);
+      recordDebug("controls-updated", {
+        enabled,
+        pitch: curPitch,
+        micro: curMicro,
+        speed: curSpeed,
+        reverb: curReverb,
+      });
       apply();
       postState();
     } else if (d.type === "setEnabled") {
       curPitch = Number(d.pitch) || 0;
       curMicro = Number(d.micro) || 0;
       curSpeed = Number(d.speed) || 1;
+      readReverbControls(d);
       enabled = !!d.enabled;
+      recordDebug("enabled-updated", { enabled });
       if (enabled) {
         apply();
       } else {
+        applyGeneration++;
+        wired.forEach((node) => route(node, false));
         restoreSpeed();
-        wired.forEach(applyNode);
       }
       postState();
     } else if (d.type === "getState") {
@@ -848,12 +1177,7 @@
     if (moTimer) return;
     moTimer = setTimeout(() => {
       moTimer = null;
-      if (enabled) applySpeed();
-      if (isActive()) {
-        ensureCtx();
-        getMedia().forEach(wire);
-        wired.forEach(applyNode);
-      }
+      if (enabled) apply();
       const has = getMedia().length > 0;
       if (has !== lastHasMedia) {
         lastHasMedia = has;

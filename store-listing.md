@@ -17,7 +17,7 @@ not require one.
 
 ## License
 All Rights Reserved (proprietary). Choose "All Rights Reserved" on AMO.
-Bundled components keep their own licenses: SoundTouch JS (LGPL-2.1) and
+Bundled components keep their own licenses: SoundTouchJS AudioWorklet (MPL-2.0) and
 IBM Plex Sans (SIL OFL-1.1).
 
 ## Privacy
@@ -28,10 +28,10 @@ and your settings are stored only on your own device (browser storage).
 ---
 
 ## Summary (EN, <=250 chars)
-Change the pitch of any video or audio in real time without changing the speed — and change the speed without changing the pitch. Works everywhere, including YouTube. No account, no setup, no data collected. Just click and play.
+Change pitch without changing speed, adjust speed without changing pitch, and add reverb to browser media. Works everywhere, including YouTube. No account, no setup, no data collected.
 
 ## Description (EN)
-PitchShifter changes the musical pitch of any video or audio playing in your browser, in real time, without changing the speed. It can also change the speed without changing the pitch. Handy for musicians transposing a song, learners slowing speech down, or anyone who wants audio in a different key.
+PitchShifter changes the musical pitch of any video or audio playing in your browser, in real time, without changing the speed. It can also change speed without changing pitch and add adjustable stereo studio-room reverb. Handy for musicians transposing a song, learners slowing speech down, or anyone experimenting with sound.
 
 Private by design
 - No account, no sign-in, no tracking, no ads.
@@ -48,16 +48,18 @@ Controls
 - Pitch: −12 to +12 semitones.
 - Microtones: fine tuning between semitones.
 - Speed: 25% to 200%, keeping the pitch intact.
+- Reverb: 0% to 100% dry/wet mix.
+- Reverb modes: Simple for one-slider control, or Advanced with room size, decay, tone and pre-delay.
 
-Built on the SoundTouch time-domain engine for clean, natural-sounding shifts.
+Uses a hybrid SoundTouchJS engine: natural WSOLA processing in the normal range and a smoother phase vocoder for extreme slowdowns.
 
 ---
 
 ## Summary (PT, <=250 chars)
-Muda o tom de qualquer vídeo ou áudio em tempo real sem alterar a velocidade — e muda a velocidade sem alterar o tom. Funciona em todo o lado, incluindo YouTube. Sem conta, sem configuração, sem recolha de dados. Clica e usa.
+Muda o tom sem alterar a velocidade, ajusta a velocidade sem alterar o tom e adiciona reverb ao áudio do browser. Funciona em todo o lado, incluindo YouTube. Sem conta nem recolha de dados.
 
 ## Description (PT)
-O PitchShifter muda o tom (pitch) de qualquer vídeo ou áudio no teu browser, em tempo real, sem alterar a velocidade. Também muda a velocidade sem alterar o tom. Útil para músicos a transpor uma música, para abrandar fala ao aprender, ou para quem queira o áudio noutro tom.
+O PitchShifter muda o tom (pitch) de qualquer vídeo ou áudio no teu browser, em tempo real, sem alterar a velocidade. Também muda a velocidade sem alterar o tom e adiciona um reverb estéreo de estúdio ajustável. Útil para músicos, para abrandar fala ou para experimentar com som.
 
 Privado por princípio
 - Sem conta, sem login, sem tracking, sem anúncios.
@@ -74,8 +76,10 @@ Controlos
 - Pitch: −12 a +12 semitons.
 - Microtons: afinação fina entre semitons.
 - Velocidade: 25% a 200%, mantendo o tom.
+- Reverb: mistura dry/wet de 0% a 100%.
+- Modos de reverb: Simple com um slider, ou Advanced com tamanho da sala, decay, tone e pre-delay.
 
-Construído sobre o motor SoundTouch (domínio do tempo) para alterações limpas e naturais.
+Usa um motor SoundTouchJS híbrido: WSOLA natural na gama normal e um phase vocoder mais suave para abrandamentos extremos.
 
 ---
 

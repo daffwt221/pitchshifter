@@ -7,8 +7,9 @@ of the third-party components listed below.
 
 Third-party components, each under its own license:
 
-- SoundTouch JS (pitch-shifting DSP, vendored in injected.js) —
-  GNU LGPL-2.1. Its original copyright and license header is kept intact, and
-  that component remains available under the LGPL.
+- SoundTouchJS AudioWorklet and Phase Vocoder Worklet 2.1.1 (pitch-shifting
+  DSP, vendored in soundtouch-worklet.js and phase-vocoder-worklet.js) —
+  Mozilla Public License 2.0, see
+  soundtouch-worklet.LICENSE.txt.
 - IBM Plex Sans (UI font in popup/fonts/) —
   SIL Open Font License 1.1, see popup/fonts/OFL.txt.

@@ -58,6 +58,12 @@
       </button>
     </div>
 
+    <div class="tabs" role="tablist" aria-label="PitchShifter controls">
+      <button id="mainTab" class="tab-btn active" type="button" role="tab" aria-selected="true" aria-controls="mainPanel">Pitch &amp; Speed</button>
+      <button id="reverbTab" class="tab-btn" type="button" role="tab" aria-selected="false" aria-controls="reverbPanel">Reverb</button>
+    </div>
+
+    <section id="mainPanel" class="tab-panel active" role="tabpanel" aria-labelledby="mainTab">
     <div class="group">
       <div class="ghead">
         <span class="glabel">Pitch</span>
@@ -123,6 +129,99 @@
         <button class="btn" id="speedPlus" aria-label="Increase speed">+</button>
       </div>
     </div>
+
+    </section>
+
+    <section id="reverbPanel" class="tab-panel" role="tabpanel" aria-labelledby="reverbTab" hidden>
+    <div class="mode-switch" role="group" aria-label="Reverb mode">
+      <button id="simpleMode" class="mode-btn active" type="button" aria-pressed="true">Simple</button>
+      <button id="advancedMode" class="mode-btn" type="button" aria-pressed="false">Advanced</button>
+    </div>
+
+    <div class="group">
+      <div class="ghead">
+        <span class="glabel">Amount</span>
+        <span class="gright">
+          <input
+            class="val"
+            id="reverbValue"
+            type="text"
+            inputmode="decimal"
+            aria-label="Reverb mix (percent)"
+            value="0%"
+          />
+          <button class="reset" id="reverbReset" title="Reset reverb">&#x21BB;</button>
+        </span>
+      </div>
+      <div class="row">
+        <button class="btn" id="reverbMinus" aria-label="Decrease reverb">&minus;</button>
+        <input type="range" id="reverbSlider" min="0" max="1" step="0.01" value="0" />
+        <button class="btn" id="reverbPlus" aria-label="Increase reverb">+</button>
+      </div>
+    </div>
+
+    <div id="advancedControls" class="advanced-controls" hidden>
+      <div class="group">
+        <div class="ghead">
+          <span class="glabel">Room Size</span>
+          <span class="gright">
+            <input class="val" id="reverbSizeValue" type="text" inputmode="decimal" aria-label="Reverb room size (percent)" value="100%" />
+            <button class="reset" id="reverbSizeReset" title="Reset room size">&#x21BB;</button>
+          </span>
+        </div>
+        <div class="row">
+          <button class="btn" id="reverbSizeMinus" aria-label="Decrease room size">&minus;</button>
+          <input type="range" id="reverbSizeSlider" min="0.5" max="1.5" step="0.01" value="1" />
+          <button class="btn" id="reverbSizePlus" aria-label="Increase room size">+</button>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="ghead">
+          <span class="glabel">Decay</span>
+          <span class="gright">
+            <input class="val" id="reverbDecayValue" type="text" inputmode="decimal" aria-label="Reverb decay (seconds)" value="2.8 s" />
+            <button class="reset" id="reverbDecayReset" title="Reset decay">&#x21BB;</button>
+          </span>
+        </div>
+        <div class="row">
+          <button class="btn" id="reverbDecayMinus" aria-label="Decrease decay">&minus;</button>
+          <input type="range" id="reverbDecaySlider" min="0.8" max="5" step="0.1" value="2.8" />
+          <button class="btn" id="reverbDecayPlus" aria-label="Increase decay">+</button>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="ghead">
+          <span class="glabel">Tone</span>
+          <span class="gright">
+            <input class="val" id="reverbToneValue" type="text" inputmode="decimal" aria-label="Reverb brightness (percent)" value="55%" />
+            <button class="reset" id="reverbToneReset" title="Reset tone">&#x21BB;</button>
+          </span>
+        </div>
+        <div class="row">
+          <button class="btn" id="reverbToneMinus" aria-label="Darken reverb">&minus;</button>
+          <input type="range" id="reverbToneSlider" min="0" max="1" step="0.01" value="0.55" />
+          <button class="btn" id="reverbTonePlus" aria-label="Brighten reverb">+</button>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="ghead">
+          <span class="glabel">Pre-delay</span>
+          <span class="gright">
+            <input class="val" id="reverbPreDelayValue" type="text" inputmode="decimal" aria-label="Reverb pre-delay (milliseconds)" value="16 ms" />
+            <button class="reset" id="reverbPreDelayReset" title="Reset pre-delay">&#x21BB;</button>
+          </span>
+        </div>
+        <div class="row">
+          <button class="btn" id="reverbPreDelayMinus" aria-label="Decrease pre-delay">&minus;</button>
+          <input type="range" id="reverbPreDelaySlider" min="0" max="0.1" step="0.001" value="0.016" />
+          <button class="btn" id="reverbPreDelayPlus" aria-label="Increase pre-delay">+</button>
+        </div>
+      </div>
+    </div>
+    </section>
 
     <div class="status">
       <span id="status" class="status-text">&hellip;</span>

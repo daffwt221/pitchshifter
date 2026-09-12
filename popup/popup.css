@@ -115,6 +115,108 @@ body {
   border-bottom: 1px solid var(--line);
 }
 
+.tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 0;
+  margin-bottom: var(--s2);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.tab-btn,
+.mode-btn {
+  min-width: 0;
+  border: 1px solid transparent;
+  border-radius: var(--r);
+  background: transparent;
+  color: var(--text-2);
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tab-btn {
+  position: relative;
+  height: 27px;
+  border: 0;
+  background: transparent;
+  transition: background-color 160ms ease, color 160ms ease;
+}
+
+.tab-btn::after {
+  content: "";
+  position: absolute;
+  right: var(--s2);
+  bottom: -1px;
+  left: var(--s2);
+  height: 2px;
+  background: #e0a82e;
+  transform: scaleX(0);
+  transform-origin: center;
+  transition: transform 160ms ease;
+}
+
+.tab-btn:hover {
+  background: var(--btn-hover);
+  color: var(--text);
+}
+
+.mode-btn:hover {
+  color: var(--text);
+}
+
+.tab-btn.active {
+  border-color: transparent;
+  background: transparent;
+  color: var(--text);
+}
+
+.tab-btn.active::after {
+  transform: scaleX(1);
+}
+
+.tab-btn.active:hover {
+  background: var(--btn-hover);
+}
+
+.mode-btn.active {
+  border-color: var(--line-2);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.tab-btn:focus,
+.tab-btn:focus-visible {
+  outline: none;
+}
+
+.mode-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.tab-panel[hidden],
+.advanced-controls[hidden] {
+  display: none;
+}
+
+.mode-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  padding: 2px;
+  margin-bottom: var(--s2);
+  border-bottom: 1px solid var(--line);
+}
+
+.mode-btn {
+  height: 25px;
+}
+
 .logo {
   flex: 0 0 auto;
   display: block;

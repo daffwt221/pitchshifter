@@ -1,4 +1,4 @@
-// popup.js — UI logic. Reads/sets pitch, microtones and speed in the active tab.
+// popup.js — UI logic. Controls pitch, microtones, speed and reverb in this tab.
 const api = typeof browser !== "undefined" ? browser : chrome;
 
 // Donation link. Replace YOUR_USERNAME with your Ko-fi (or other) handle.
@@ -8,9 +8,19 @@ const DONATE_URL = "https://ko-fi.com/daffwt221";
 const pitchSlider = document.getElementById("pitchSlider");
 const microSlider = document.getElementById("microSlider");
 const speedSlider = document.getElementById("speedSlider");
+const reverbSlider = document.getElementById("reverbSlider");
+const reverbSizeSlider = document.getElementById("reverbSizeSlider");
+const reverbDecaySlider = document.getElementById("reverbDecaySlider");
+const reverbToneSlider = document.getElementById("reverbToneSlider");
+const reverbPreDelaySlider = document.getElementById("reverbPreDelaySlider");
 const pitchValue = document.getElementById("pitchValue");
 const microValue = document.getElementById("microValue");
 const speedValue = document.getElementById("speedValue");
+const reverbValue = document.getElementById("reverbValue");
+const reverbSizeValue = document.getElementById("reverbSizeValue");
+const reverbDecayValue = document.getElementById("reverbDecayValue");
+const reverbToneValue = document.getElementById("reverbToneValue");
+const reverbPreDelayValue = document.getElementById("reverbPreDelayValue");
 const statusEl = document.getElementById("status");
 const enabledToggle = document.getElementById("enabledToggle");
 
@@ -20,11 +30,28 @@ let hasMedia = false;
 let pitch = 0; // integer semitones, -12..12
 let micro = 0; // fine, -1.00..1.00
 let speed = 1; // playback rate, 0.25..2.00
+let reverb = 0; // dry/wet mix, 0.00..1.00
+let reverbMode = "simple";
+let reverbSize = 1;
+let reverbDecay = 2.8;
+let reverbTone = 0.55;
+let reverbPreDelay = 0.016;
+let pushFrame = null;
+let pushPending = false;
 
 const clampPitch = (v) => Math.max(-12, Math.min(12, Math.round(v)));
 const clampMicro = (v) => Math.max(-1, Math.min(1, Math.round(v * 100) / 100));
 const clampSpeed = (v) =>
     Math.max(0.25, Math.min(2, Math.round(v * 100) / 100));
+const clampReverb = (v) =>
+    Math.max(0, Math.min(1, Math.round(v * 100) / 100));
+const clampReverbSize = (v) =>
+    Math.max(0.5, Math.min(1.5, Math.round(v * 100) / 100));
+const clampReverbDecay = (v) =>
+    Math.max(0.8, Math.min(5, Math.round(v * 10) / 10));
+const clampReverbTone = clampReverb;
+const clampReverbPreDelay = (v) =>
+    Math.max(0, Math.min(0.1, Math.round(v * 1000) / 1000));
 
 // Pull the slider colors from the active theme's CSS tokens (read fresh so a
 // theme switch updates the fills too).
@@ -47,17 +74,81 @@ function render() {
     pitchSlider.value = String(pitch);
     microSlider.value = String(micro);
     speedSlider.value = String(speed);
+    reverbSlider.value = String(reverb);
+    reverbSizeSlider.value = String(reverbSize);
+    reverbDecaySlider.value = String(reverbDecay);
+    reverbToneSlider.value = String(reverbTone);
+    reverbPreDelaySlider.value = String(reverbPreDelay);
     pitchValue.value = (pitch > 0 ? "+" : "") + pitch;
     microValue.value = (micro > 0 ? "+" : "") + micro.toFixed(2);
     speedValue.value = Math.round(speed * 100) + "%";
+    reverbValue.value = Math.round(reverb * 100) + "%";
+    reverbSizeValue.value = Math.round(reverbSize * 100) + "%";
+    reverbDecayValue.value = reverbDecay.toFixed(1) + " s";
+    reverbToneValue.value = Math.round(reverbTone * 100) + "%";
+    reverbPreDelayValue.value = Math.round(reverbPreDelay * 1000) + " ms";
     fillSlider(pitchSlider, pitch, -12, 12, 0);
     fillSlider(microSlider, micro, -1, 1, 0);
     fillSlider(speedSlider, speed, 0.25, 2, 1);
+    fillSlider(reverbSlider, reverb, 0, 1, 0);
+    fillSlider(reverbSizeSlider, reverbSize, 0.5, 1.5, 1);
+    fillSlider(reverbDecaySlider, reverbDecay, 0.8, 5, 2.8);
+    fillSlider(reverbToneSlider, reverbTone, 0, 1, 0.55);
+    fillSlider(reverbPreDelaySlider, reverbPreDelay, 0, 0.1, 0.016);
+    const advanced = reverbMode === "advanced";
+    document.getElementById("advancedControls").hidden = !advanced;
+    document.getElementById("simpleMode").classList.toggle("active", !advanced);
+    document.getElementById("advancedMode").classList.toggle("active", advanced);
+    document.getElementById("simpleMode").setAttribute("aria-pressed", String(!advanced));
+    document.getElementById("advancedMode").setAttribute("aria-pressed", String(advanced));
     enabledToggle.textContent = enabled ? "On" : "Off";
     enabledToggle.classList.toggle("on", enabled);
     enabledToggle.setAttribute("aria-pressed", String(enabled));
     enabledToggle.title = enabled ? "Disable on this tab" : "Enable on this tab";
     enabledToggle.setAttribute("aria-label", enabledToggle.title);
+}
+
+function sendCurrentSettings() {
+    if (!pushPending || tabId == null) return;
+    pushPending = false;
+    api.tabs
+        .sendMessage(tabId, {
+            type: "setPitch",
+            enabled,
+            pitch,
+            micro,
+            speed,
+            reverb,
+            reverbMode,
+            reverbSize,
+            reverbDecay,
+            reverbTone,
+            reverbPreDelay,
+        })
+        .catch(() => {});
+    api.storage.local
+        .set({
+            settings: {
+                pitch,
+                micro,
+                speed,
+                reverb,
+                reverbMode,
+                reverbSize,
+                reverbDecay,
+                reverbTone,
+                reverbPreDelay,
+            },
+        })
+        .catch(() => {});
+}
+
+function flushPush() {
+    if (pushFrame !== null) {
+        cancelAnimationFrame(pushFrame);
+        pushFrame = null;
+    }
+    sendCurrentSettings();
 }
 
 function push() {
@@ -66,12 +157,16 @@ function push() {
     render();
     setStatus(hasMedia);
     if (tabId == null) return;
-    api.tabs
-        .sendMessage(tabId, { type: "setPitch", enabled, pitch, micro, speed })
-        .catch(() => {});
-    api.storage.local
-        .set({ settings: { pitch, micro, speed } })
-        .catch(() => {});
+
+    // Coalesce dense slider input to one update per visual frame. The final
+    // value is flushed immediately by the range control's change event.
+    pushPending = true;
+    if (pushFrame === null) {
+        pushFrame = requestAnimationFrame(() => {
+            pushFrame = null;
+            sendCurrentSettings();
+        });
+    }
 }
 
 function setPitch(v) {
@@ -89,6 +184,36 @@ function setSpeed(v) {
     push();
 }
 
+function setReverb(v) {
+    reverb = clampReverb(v);
+    push();
+}
+
+function setReverbMode(mode) {
+    reverbMode = mode === "advanced" ? "advanced" : "simple";
+    push();
+}
+
+function setReverbSize(v) {
+    reverbSize = clampReverbSize(v);
+    push();
+}
+
+function setReverbDecay(v) {
+    reverbDecay = clampReverbDecay(v);
+    push();
+}
+
+function setReverbTone(v) {
+    reverbTone = clampReverbTone(v);
+    push();
+}
+
+function setReverbPreDelay(v) {
+    reverbPreDelay = clampReverbPreDelay(v);
+    push();
+}
+
 pitchSlider.addEventListener("input", (e) =>
     setPitch(parseFloat(e.target.value)),
 );
@@ -97,6 +222,48 @@ microSlider.addEventListener("input", (e) =>
 );
 speedSlider.addEventListener("input", (e) =>
     setSpeed(parseFloat(e.target.value)),
+);
+reverbSlider.addEventListener("input", (e) =>
+    setReverb(parseFloat(e.target.value)),
+);
+reverbSizeSlider.addEventListener("input", (e) => {
+    reverbSize = clampReverbSize(parseFloat(e.target.value));
+    render();
+});
+reverbDecaySlider.addEventListener("input", (e) => {
+    reverbDecay = clampReverbDecay(parseFloat(e.target.value));
+    render();
+});
+reverbToneSlider.addEventListener("input", (e) =>
+    setReverbTone(parseFloat(e.target.value)),
+);
+reverbPreDelaySlider.addEventListener("input", (e) =>
+    setReverbPreDelay(parseFloat(e.target.value)),
+);
+[
+    pitchSlider,
+    microSlider,
+    speedSlider,
+    reverbSlider,
+    reverbToneSlider,
+    reverbPreDelaySlider,
+].forEach((slider) =>
+    slider.addEventListener("change", flushPush),
+);
+reverbSizeSlider.addEventListener("change", (e) => {
+    setReverbSize(parseFloat(e.target.value));
+    flushPush();
+});
+reverbDecaySlider.addEventListener("change", (e) => {
+    setReverbDecay(parseFloat(e.target.value));
+    flushPush();
+});
+
+document.getElementById("simpleMode").addEventListener("click", () =>
+    setReverbMode("simple"),
+);
+document.getElementById("advancedMode").addEventListener("click", () =>
+    setReverbMode("advanced"),
 );
 
 document
@@ -117,6 +284,36 @@ document
 document
     .getElementById("speedPlus")
     .addEventListener("click", () => setSpeed(speed + 0.01));
+document
+    .getElementById("reverbMinus")
+    .addEventListener("click", () => setReverb(reverb - 0.01));
+document
+    .getElementById("reverbPlus")
+    .addEventListener("click", () => setReverb(reverb + 0.01));
+document
+    .getElementById("reverbSizeMinus")
+    .addEventListener("click", () => setReverbSize(reverbSize - 0.01));
+document
+    .getElementById("reverbSizePlus")
+    .addEventListener("click", () => setReverbSize(reverbSize + 0.01));
+document
+    .getElementById("reverbDecayMinus")
+    .addEventListener("click", () => setReverbDecay(reverbDecay - 0.1));
+document
+    .getElementById("reverbDecayPlus")
+    .addEventListener("click", () => setReverbDecay(reverbDecay + 0.1));
+document
+    .getElementById("reverbToneMinus")
+    .addEventListener("click", () => setReverbTone(reverbTone - 0.01));
+document
+    .getElementById("reverbTonePlus")
+    .addEventListener("click", () => setReverbTone(reverbTone + 0.01));
+document
+    .getElementById("reverbPreDelayMinus")
+    .addEventListener("click", () => setReverbPreDelay(reverbPreDelay - 0.001));
+document
+    .getElementById("reverbPreDelayPlus")
+    .addEventListener("click", () => setReverbPreDelay(reverbPreDelay + 0.001));
 
 document
     .getElementById("pitchReset")
@@ -127,17 +324,37 @@ document
 document
     .getElementById("speedReset")
     .addEventListener("click", () => setSpeed(1));
+document
+    .getElementById("reverbReset")
+    .addEventListener("click", () => setReverb(0));
+document
+    .getElementById("reverbSizeReset")
+    .addEventListener("click", () => setReverbSize(1));
+document
+    .getElementById("reverbDecayReset")
+    .addEventListener("click", () => setReverbDecay(2.8));
+document
+    .getElementById("reverbToneReset")
+    .addEventListener("click", () => setReverbTone(0.55));
+document
+    .getElementById("reverbPreDelayReset")
+    .addEventListener("click", () => setReverbPreDelay(0.016));
 
 // Click a value to type it directly. On focus show the raw number; on Enter
 // or blur parse it, clamp, and reformat. Escape restores.
 function wireValueInput(el, kind) {
     el.addEventListener("focus", () => {
-        el.value =
-            kind === "pitch"
-                ? String(pitch)
-                : kind === "micro"
-                  ? String(micro)
-                  : String(Math.round(speed * 100));
+        const rawValues = {
+            pitch,
+            micro,
+            speed: Math.round(speed * 100),
+            reverb: Math.round(reverb * 100),
+            reverbSize: Math.round(reverbSize * 100),
+            reverbDecay,
+            reverbTone: Math.round(reverbTone * 100),
+            reverbPreDelay: Math.round(reverbPreDelay * 1000),
+        };
+        el.value = String(rawValues[kind]);
         el.select();
     });
     el.addEventListener("keydown", (e) => {
@@ -154,12 +371,27 @@ function wireValueInput(el, kind) {
         const num = parseFloat(el.value.replace(/[^0-9.\-]/g, ""));
         if (kind === "pitch") setPitch(Number.isFinite(num) ? num : pitch);
         else if (kind === "micro") setMicro(Number.isFinite(num) ? num : micro);
-        else setSpeed(Number.isFinite(num) ? num / 100 : speed);
+        else if (kind === "speed") setSpeed(Number.isFinite(num) ? num / 100 : speed);
+        else if (kind === "reverb") setReverb(Number.isFinite(num) ? num / 100 : reverb);
+        else if (kind === "reverbSize") {
+            setReverbSize(Number.isFinite(num) ? num / 100 : reverbSize);
+        } else if (kind === "reverbDecay") {
+            setReverbDecay(Number.isFinite(num) ? num : reverbDecay);
+        } else if (kind === "reverbTone") {
+            setReverbTone(Number.isFinite(num) ? num / 100 : reverbTone);
+        } else {
+            setReverbPreDelay(Number.isFinite(num) ? num / 1000 : reverbPreDelay);
+        }
     });
 }
 wireValueInput(pitchValue, "pitch");
 wireValueInput(microValue, "micro");
 wireValueInput(speedValue, "speed");
+wireValueInput(reverbValue, "reverb");
+wireValueInput(reverbSizeValue, "reverbSize");
+wireValueInput(reverbDecayValue, "reverbDecay");
+wireValueInput(reverbToneValue, "reverbTone");
+wireValueInput(reverbPreDelayValue, "reverbPreDelay");
 
 function setStatus(hasMedia) {
     if (!enabled) {
@@ -189,11 +421,32 @@ function toggleEnabled() {
             pitch,
             micro,
             speed,
+            reverb,
+            reverbMode,
+            reverbSize,
+            reverbDecay,
+            reverbTone,
+            reverbPreDelay,
         })
         .catch(() => {});
 }
 
 enabledToggle.addEventListener("click", toggleEnabled);
+
+function showPanel(panel) {
+    const showReverb = panel === "reverb";
+    const mainTab = document.getElementById("mainTab");
+    const reverbTab = document.getElementById("reverbTab");
+    document.getElementById("mainPanel").hidden = showReverb;
+    document.getElementById("reverbPanel").hidden = !showReverb;
+    mainTab.classList.toggle("active", !showReverb);
+    reverbTab.classList.toggle("active", showReverb);
+    mainTab.setAttribute("aria-selected", String(!showReverb));
+    reverbTab.setAttribute("aria-selected", String(showReverb));
+}
+
+document.getElementById("mainTab").addEventListener("click", () => showPanel("main"));
+document.getElementById("reverbTab").addEventListener("click", () => showPanel("reverb"));
 
 // Live updates pushed from any frame (covers media inside iframes/embeds).
 api.runtime.onMessage.addListener((msg, sender) => {
@@ -210,6 +463,12 @@ async function init() {
             pitch = clampPitch(stored.settings.pitch || 0);
             micro = clampMicro(stored.settings.micro || 0);
             speed = clampSpeed(stored.settings.speed || 1);
+            reverb = clampReverb(stored.settings.reverb || 0);
+            reverbMode = stored.settings.reverbMode === "advanced" ? "advanced" : "simple";
+            reverbSize = clampReverbSize(stored.settings.reverbSize ?? 1);
+            reverbDecay = clampReverbDecay(stored.settings.reverbDecay ?? 2.8);
+            reverbTone = clampReverbTone(stored.settings.reverbTone ?? 0.55);
+            reverbPreDelay = clampReverbPreDelay(stored.settings.reverbPreDelay ?? 0.016);
         }
     } catch (e) {}
 
@@ -229,11 +488,23 @@ async function init() {
                 enabled ||
                 Number(state.pitch) !== 0 ||
                 Number(state.micro) !== 0 ||
-                Math.abs(Number(state.speed || 1) - 1) > 1e-6;
+                Math.abs(Number(state.speed || 1) - 1) > 1e-6 ||
+                Number(state.reverb) !== 0 ||
+                state.reverbMode === "advanced" ||
+                Math.abs(Number(state.reverbSize ?? 1) - 1) > 1e-6 ||
+                Math.abs(Number(state.reverbDecay ?? 2.8) - 2.8) > 1e-6 ||
+                Math.abs(Number(state.reverbTone ?? 0.55) - 0.55) > 1e-6 ||
+                Math.abs(Number(state.reverbPreDelay ?? 0.016) - 0.016) > 1e-6;
             if (tabHasPreset) {
                 pitch = clampPitch(state.pitch || 0);
                 micro = clampMicro(state.micro || 0);
                 speed = clampSpeed(state.speed || 1);
+                reverb = clampReverb(state.reverb || 0);
+                reverbMode = state.reverbMode === "advanced" ? "advanced" : "simple";
+                reverbSize = clampReverbSize(state.reverbSize ?? 1);
+                reverbDecay = clampReverbDecay(state.reverbDecay ?? 2.8);
+                reverbTone = clampReverbTone(state.reverbTone ?? 0.55);
+                reverbPreDelay = clampReverbPreDelay(state.reverbPreDelay ?? 0.016);
             }
             render();
             setStatus(hasMedia);

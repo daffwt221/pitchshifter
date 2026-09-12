@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "PitchShifter",
   "version": "1.1.0",
-  "description": "Shift the pitch of any video or audio on a page in real time, without changing the playback speed.",
+  "description": "Shift pitch, change speed independently, and add adjustable reverb to media on a page.",
   "browser_specific_settings": {
     "gecko": {
       "id": "pitchshifter@daffwt221",
@@ -27,6 +27,12 @@
   },
   "permissions": [
     "storage"
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["soundtouch-worklet.js", "phase-vocoder-worklet.js"],
+      "matches": ["<all_urls>"]
+    }
   ],
   "content_scripts": [
     {
