@@ -8,3 +8,4 @@ web-ext-artifacts/
 Thumbs.db
 .vscode/
 .idea/
+*Zone.Identifier

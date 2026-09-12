@@ -28,30 +28,47 @@ and your settings are stored only on your own device (browser storage).
 ---
 
 ## Summary (EN, <=250 chars)
-Change pitch without changing speed, adjust speed without changing pitch, and add reverb to browser media. Works everywhere, including YouTube. No account, no setup, no data collected.
+Change pitch without changing speed, adjust speed without changing pitch, and add customizable reverb to browser media. Per-tab controls work with YouTube, Spotify Web and more. No account, tracking or data collection.
 
 ## Description (EN)
-PitchShifter changes the musical pitch of any video or audio playing in your browser, in real time, without changing the speed. It can also change speed without changing pitch and add adjustable stereo studio-room reverb. Handy for musicians transposing a song, learners slowing speech down, or anyone experimenting with sound.
+PitchShifter changes the musical pitch of video and audio playing in your browser in real time without changing playback speed. It can also change speed while preserving the configured pitch and add adjustable stereo room reverb.
+
+Great for musicians transposing songs, singers and karaoke, language learners slowing down speech, or anyone who wants to experiment with sound in a different key or space.
 
 Private by design
-- No account, no sign-in, no tracking, no ads.
-- Collects no data. Everything runs locally; nothing is ever sent anywhere.
-- Your settings are saved only on your own device.
+- No account or sign-in required.
+- No analytics, tracking or ads.
+- No personal, audio or browsing data is collected or uploaded.
+- Audio processing happens locally in your browser.
+- Settings are stored only on your own device.
+
+Independent per-tab control
+- Every new or reloaded tab starts with PitchShifter switched off.
+- Moving a control enables it only for the current tab.
+- The On/Off button restores the page's native speed and pitch-preservation settings when disabled.
+- Saved values remain available as presets without being forced onto other tabs or sites.
 
 Plug and play
-- Click the toolbar icon and move a slider. That's it — no setup.
-- On/Off applies only to the current tab, so media controls in other tabs keep working normally.
-- Works on any page with audio or video, including YouTube and sites with strict security policies.
-- At a neutral setting it gets out of the way completely, with zero added latency.
+- Click the toolbar icon and move a slider. No setup required.
+- Works with supported browser media on YouTube, Spotify Web and many other sites.
+- Compatible with pages using strict Content Security Policies and players using detached media elements.
+- AudioWorklet processing keeps the audio engine separate from page and DOM work.
+- At neutral settings, processing is bypassed with zero added latency.
 
 Controls
 - Pitch: −12 to +12 semitones.
-- Microtones: fine tuning between semitones.
-- Speed: 25% to 200%, keeping the pitch intact.
-- Reverb: 0% to 100% dry/wet mix.
+- Microtones: fine-tune pitch between semitones.
+- Speed: 25% to 200%, while keeping pitch intact.
+- Reverb: 0% to 100% dry/wet mix in its own tab.
 - Reverb modes: Simple for one-slider control, or Advanced with room size, decay, tone and pre-delay.
+- On/Off: enable or disable processing for the current tab.
+- Reset: instantly restore the default control values.
 
-Uses a hybrid SoundTouchJS engine: natural WSOLA processing in the normal range and a smoother phase vocoder for extreme slowdowns.
+Version 1.1.0 uses SoundTouchJS AudioWorklets with adaptive WSOLA processing for normal and moderate slowdowns, plus a phase vocoder for smoother extreme slowdowns.
+
+If you enjoy PitchShifter and would like to support the project, you can buy me a coffee:
+
+https://ko-fi.com/daffwt221
 
 ---
 

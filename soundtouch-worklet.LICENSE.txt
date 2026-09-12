@@ -1,0 +1,11 @@
+Mozilla Public License Version 2.0
+
+The bundled SoundTouchJS AudioWorklet processors are licensed under the Mozilla
+Public License, v. 2.0. You can obtain the full license text at:
+
+https://www.mozilla.org/MPL/2.0/
+
+Corresponding upstream source:
+
+https://github.com/cutterbl/SoundTouchJS/tree/master/packages/audio-worklet
+https://github.com/cutterbl/SoundTouchJS/tree/master/packages/phase-vocoder-worklet
