@@ -1,6 +1,6 @@
 # PitchShifter
 
-Transpose browser media, change its speed independently and add adjustable reverb — all isolated to the current tab. For Firefox.
+Transpose browser media, change its speed independently and add adjustable reverb — all isolated to the current tab. For Firefox desktop 140+ and Firefox for Android 142+.
 
 <p>
   <img src="screenshots/popup-light.png" alt="PitchShifter Pitch and Speed controls, light theme" width="270" align="top" />
@@ -95,3 +95,4 @@ Copyright (c) 2026 daffwt221. All rights reserved (see [LICENSE](LICENSE)). Bund
 | `phase-vocoder-worklet.js` | Bundled SoundTouchJS 2.1.1 phase-vocoder processor for extreme slow speeds. |
 | `soundtouch-worklet.LICENSE.txt` | MPL-2.0 notice and upstream source for the bundled processors. |
 | `icons/icon.svg` | Toolbar icon / logo. |
+
