@@ -1,6 +1,6 @@
 # PitchShifter
 
-Transpose browser media, change its speed independently and add adjustable reverb — all isolated to the current tab. For Firefox.
+Transpose browser media, change its speed independently and add adjustable reverb — all isolated to the current tab. For Firefox desktop 140+ and Firefox for Android 142+.
 
 <p>
   <img src="screenshots/popup-light.png" alt="PitchShifter Pitch and Speed controls, light theme" width="270" align="top" />
