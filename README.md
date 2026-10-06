@@ -10,6 +10,10 @@ Transpose browser media, change its speed independently and add adjustable rever
 
 🦊 https://addons.mozilla.org/en-US/firefox/addon/pitchshifter/ 🦊
 
+## What's new in 1.1.1
+
+- Hotfix: avoids routing directly identifiable cross-origin media without a `crossorigin` attribute through Web Audio, preventing affected videos from becoming silent. Those elements stay on the browser's native audio path; Speed remains available with native pitch preservation, while Pitch and Reverb are unavailable for them.
+
 ## What's new in 1.1.0
 
 - Per-tab On/Off control prevents PitchShifter from overriding media settings in other tabs, while guarding the selected speed when players reconfigure background media.
@@ -67,7 +71,7 @@ Temporary add-ons are removed on browser restart. To keep it installed, package 
 
 ## Limitations
 
-- Cross-origin media without CORS headers can't be read by the Web Audio API, so pitch can't be shifted on it (speed still works).
+- Cross-origin media without a successful CORS-enabled request stays on the browser's native audio path, so playback remains audible and Speed uses native pitch preservation. Pitch shifting and Reverb are unavailable for that media.
 - Each processing engine needs a short amount of audio before producing output. The phase vocoder makes very slow playback smoother, but difficult material can still exhibit some frequency smearing. With pitch at 0 and speed at 100%, there is no added latency.
 
 ## Credits
