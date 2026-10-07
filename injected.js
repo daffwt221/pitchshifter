@@ -916,6 +916,18 @@
   // Capture one element. A normal activation uses one wet branch; a temporary
   // second branch is only present while changing engines.
   function getCaptureSkipReason(el) {
+    const host = location.hostname.toLowerCase();
+    const isYouTubeVideo =
+      /(^|\.)youtube(?:-nocookie)?\.com$/.test(host) &&
+      el instanceof HTMLVideoElement;
+    if (
+      isYouTubeVideo &&
+      typeof MediaSource !== "undefined" &&
+      el.srcObject instanceof MediaSource
+    ) {
+      return "youtube-mse-blob";
+    }
+
     const sourceUrl =
       el.currentSrc ||
       el.getAttribute("src") ||
@@ -930,6 +942,11 @@
 
     try {
       const url = new URL(sourceUrl, location.href);
+      // A YouTube blob URL does not reveal whether its media is safe to route
+      // through Web Audio. Keep these videos on the browser's native audio path.
+      if (isYouTubeVideo && url.protocol === "blob:") {
+        return "youtube-mse-blob";
+      }
       if (url.protocol === "blob:" || url.protocol === "data:") return null;
       if (
         !el.hasAttribute("crossorigin") &&
