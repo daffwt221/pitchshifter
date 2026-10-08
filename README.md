@@ -10,15 +10,22 @@ Transpose browser media, change its speed independently and add adjustable rever
 
 🦊 https://addons.mozilla.org/en-US/firefox/addon/pitchshifter/ 🦊
 
-## What's new in 1.1.2
+## Changelog
+
+### 1.1.3
+
+- Restores Pitch, Microtones and Reverb for YouTube videos using `blob:` URLs or MediaSource by removing the blanket native-audio fallback introduced in 1.1.2 (Users were reporting problems with this implementation).
+- Retains the 1.1.1 protection for directly identifiable cross-origin media without a `crossorigin` attribute; those elements continue to use native audio and Speed.
+
+### 1.1.2
 
 - Follow-up to the 1.1.1 hotfix: YouTube video elements using `blob:` URLs stay on the browser's native audio path because the URL does not reveal whether the media is safe to route through Web Audio. Speed remains available with native pitch preservation; Pitch and Reverb are unavailable for those videos.
 
-## What's new in 1.1.1
+### 1.1.1
 
 - Hotfix: avoids routing directly identifiable cross-origin media without a `crossorigin` attribute through Web Audio, preventing affected videos from becoming silent. Those elements stay on the browser's native audio path; Speed remains available with native pitch preservation, while Pitch and Reverb are unavailable for them.
 
-## What's new in 1.1.0
+### 1.1.0
 
 - Per-tab On/Off control prevents PitchShifter from overriding media settings in other tabs, while guarding the selected speed when players reconfigure background media.
 - AudioWorklet-based pitch and speed processing removes the previous visible delay and page-load crackling.
@@ -31,7 +38,7 @@ Transpose browser media, change its speed independently and add adjustable rever
 - Separate Reverb tab with Simple and Advanced modes, stereo early reflections, a dense diffused tail and a smooth constant-power dry/wet mix.
 - Hybrid SoundTouchJS engine: WSOLA in the normal range and a phase vocoder for smoother extreme slowdowns, with Lanczos interpolation in both.
 - AudioWorklet processing keeps the DSP off the page thread, preventing page/DOM work from starving its audio callback.
-- Works on supported HTML5 media, including pages with strict CSP and detached media elements used by players such as Spotify Web. YouTube video elements using `blob:` URLs stay on the native audio path for compatibility.
+- Works on supported HTML5 media, including pages with strict CSP (YouTube, etc.) and detached media elements used by players such as Spotify Web.
 - Zero added latency when both pitch and speed are neutral: the audio goes straight through, as if the effect were off.
 - Control values are remembered as presets, while activation is isolated to the current tab.
 - Clean control-panel UI that follows your light/dark browser theme.
@@ -76,7 +83,6 @@ Temporary add-ons are removed on browser restart. To keep it installed, package 
 ## Limitations
 
 - Cross-origin media without a successful CORS-enabled request stays on the browser's native audio path, so playback remains audible and Speed uses native pitch preservation. Pitch shifting and Reverb are unavailable for that media.
-- YouTube video elements using `blob:` URLs also stay on the native audio path because the blob URL does not expose the origins or CORS status of its media. Speed remains available; Pitch and Reverb are unavailable for those videos.
 - Each processing engine needs a short amount of audio before producing output. The phase vocoder makes very slow playback smoother, but difficult material can still exhibit some frequency smearing. With pitch at 0 and speed at 100%, there is no added latency.
 
 ## Credits
