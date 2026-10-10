@@ -1,0 +1,63 @@
+name: macOS audio diagnostic
+
+on:
+  push:
+    branches: [diagnostic/macos-26-audio]
+    paths:
+      - '.github/workflows/macos-audio-diagnostic.yml'
+      - 'diagnostics/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-audio-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audio:
+    # Standard runner: free for this public repository. No larger runners.
+    runs-on: macos-26
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - version: '1.1.0'
+            revision: fc5560f77356eeb030dec917c6957e2f784cb344
+          - version: '1.1.1'
+            revision: 41db6e65528bd4af1285b6593c0f88474abaf037
+          - version: '1.1.3'
+            revision: 057b07815db7d749519f31c5314a328bba30e62b
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.revision }}
+          path: addon-under-test
+      - name: Install Firefox 157.0.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 'https://archive.mozilla.org/pub/firefox/releases/157.0.1/mac/en-US/Firefox%20157.0.1.dmg' -o "$RUNNER_TEMP/firefox.dmg"
+          mkdir -p "$RUNNER_TEMP/firefox-volume"
+          hdiutil attach "$RUNNER_TEMP/firefox.dmg" -nobrowse -mountpoint "$RUNNER_TEMP/firefox-volume"
+          trap 'hdiutil detach "$RUNNER_TEMP/firefox-volume"' EXIT
+          ditto "$RUNNER_TEMP/firefox-volume/Firefox.app" "$RUNNER_TEMP/Firefox.app"
+          echo "FIREFOX_BINARY=$RUNNER_TEMP/Firefox.app/Contents/MacOS/firefox" >> "$GITHUB_ENV"
+      - name: Record host and audio devices
+        run: |
+          mkdir -p results
+          sw_vers > results/host.txt
+          uname -m >> results/host.txt
+          system_profiler SPAudioDataType >> results/host.txt
+      - name: Measure audio and collect capture decisions
+        run: python3 diagnostics/macos_audio.py --binary "$FIREFOX_BINARY" --addon addon-under-test --output results --expected-version '${{ matrix.version }}' --youtube
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-26-firefox-157.0.1-addon-${{ matrix.version }}
+          path: results/
+          retention-days: 7

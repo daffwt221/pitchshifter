@@ -3,6 +3,8 @@ module.exports = {
   ignoreFiles: [
     ".github",
     "diagnostics",
+    "addon-under-test",
+    "results",
     "store-listing.md",
     "screenshots",
     "web-ext-artifacts",
