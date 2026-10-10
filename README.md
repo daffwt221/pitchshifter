@@ -12,6 +12,11 @@ Transpose browser media, change its speed independently and add adjustable rever
 
 ## Changelog
 
+### 1.1.4
+
+- Restores the media capture and playback-speed handling from 1.1.0, reverting the preventive capture filters introduced by the 1.1.1–1.1.3 hotfixes following reports that Pitch, Microtones and Reverb stopped working.
+- Some cross-origin media can still become silent when effects are enabled. This original compatibility issue remains under investigation; see Limitations.
+
 ### 1.1.3
 
 - Restores Pitch, Microtones and Reverb for YouTube videos using `blob:` URLs or MediaSource by removing the blanket native-audio fallback introduced in 1.1.2 (Users were reporting problems with this implementation).
@@ -82,7 +87,7 @@ Temporary add-ons are removed on browser restart. To keep it installed, package 
 
 ## Limitations
 
-- Cross-origin media without a successful CORS-enabled request stays on the browser's native audio path, so playback remains audible and Speed uses native pitch preservation. Pitch shifting and Reverb are unavailable for that media.
+- Cross-origin media without a successful CORS-enabled request can become silent when routed through Web Audio. Version 1.1.4 restores the capture behavior of 1.1.0, so affected media is no longer excluded automatically. If this happens, turn PitchShifter off and reload the page to restore native playback.
 - Each processing engine needs a short amount of audio before producing output. The phase vocoder makes very slow playback smoother, but difficult material can still exhibit some frequency smearing. With pitch at 0 and speed at 100%, there is no added latency.
 
 ## Credits
