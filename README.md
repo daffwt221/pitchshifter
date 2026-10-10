@@ -73,6 +73,14 @@ Pitch, Microtones and Speed live on the front tab; Reverb has its own tab. **Sim
 
 Temporary add-ons are removed on browser restart. To keep it installed, package and sign with [web-ext](https://extensionworkshop.com/documentation/develop/getting-started-with-web-ext/) via [addons.mozilla.org](https://addons.mozilla.org/).
 
+## Development and releases
+
+Pull requests to `main` are validated and packaged by GitHub Actions. After a merge to `main`, a new version in `manifest.json` automatically creates a `v<version>` tag and a GitHub Release marked as **Latest**, with `pitchshifter-<version>.zip` attached. Release notes come from that version's entry under Changelog above.
+
+For each release, update `manifest.json`, add its Changelog entry, test the extension and merge to `main`. Already published versions are left unchanged; increase the version to publish another build. The workflow can also be rerun from the Actions tab. AMO signing and submission remain manual: download the ZIP from the GitHub Release and upload it to AMO.
+
+The workflow uses standard GitHub-hosted runners and the built-in `GITHUB_TOKEN`; no additional secrets are required. It checks release rules, runs `web-ext lint` and verifies the packaged files. These checks do not replace testing audio effects in Firefox.
+
 ## How it works
 
 - `injected.js` runs directly in the page's main world via Manifest V3; `content.js` relays messages between the popup and the page.
