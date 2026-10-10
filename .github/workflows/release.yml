@@ -19,9 +19,9 @@ jobs:
     name: Validate and package
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    env:
-      RELEASE_DIR: ${{ runner.temp }}/pitchshifter-release
     steps:
+      - name: Set artifact directory
+        run: echo "RELEASE_DIR=$RUNNER_TEMP/pitchshifter-release" >> "$GITHUB_ENV"
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
@@ -54,9 +54,9 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: write
-    env:
-      RELEASE_DIR: ${{ runner.temp }}/pitchshifter-release
     steps:
+      - name: Set artifact directory
+        run: echo "RELEASE_DIR=$RUNNER_TEMP/pitchshifter-release" >> "$GITHUB_ENV"
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
