@@ -12,6 +12,11 @@ Transpose browser media, change its speed independently and add adjustable rever
 
 ## Changelog
 
+### 1.1.4
+
+- Restores the media capture and playback-speed handling from 1.1.0, reverting the preventive capture filters introduced by the 1.1.1–1.1.3 hotfixes following reports that Pitch, Microtones and Reverb stopped working.
+- Some cross-origin media can still become silent when effects are enabled. This original compatibility issue remains under investigation; see Limitations.
+
 ### 1.1.3
 
 - Restores Pitch, Microtones and Reverb for YouTube videos using `blob:` URLs or MediaSource by removing the blanket native-audio fallback introduced in 1.1.2 (Users were reporting problems with this implementation).
@@ -68,6 +73,14 @@ Pitch, Microtones and Speed live on the front tab; Reverb has its own tab. **Sim
 
 Temporary add-ons are removed on browser restart. To keep it installed, package and sign with [web-ext](https://extensionworkshop.com/documentation/develop/getting-started-with-web-ext/) via [addons.mozilla.org](https://addons.mozilla.org/).
 
+## Development and releases
+
+Pull requests to `main` are validated and packaged by GitHub Actions. After a merge to `main`, a new version in `manifest.json` automatically creates a `v<version>` tag and a GitHub Release marked as **Latest**, with `pitchshifter-<version>.zip` attached. Release notes come from that version's entry under Changelog above.
+
+For each release, update `manifest.json`, add its Changelog entry, test the extension and merge to `main`. Already published versions are left unchanged; increase the version to publish another build. The workflow can also be rerun from the Actions tab. AMO signing and submission remain manual: download the ZIP from the GitHub Release and upload it to AMO.
+
+The workflow uses standard GitHub-hosted runners and the built-in `GITHUB_TOKEN`; no additional secrets are required. It checks release rules, runs `web-ext lint` and verifies the packaged files. These checks do not replace testing audio effects in Firefox.
+
 ## How it works
 
 - `injected.js` runs directly in the page's main world via Manifest V3; `content.js` relays messages between the popup and the page.
@@ -82,7 +95,7 @@ Temporary add-ons are removed on browser restart. To keep it installed, package 
 
 ## Limitations
 
-- Cross-origin media without a successful CORS-enabled request stays on the browser's native audio path, so playback remains audible and Speed uses native pitch preservation. Pitch shifting and Reverb are unavailable for that media.
+- Cross-origin media without a successful CORS-enabled request can become silent when routed through Web Audio. Version 1.1.4 restores the capture behavior of 1.1.0, so affected media is no longer excluded automatically. If this happens, turn PitchShifter off and reload the page to restore native playback.
 - Each processing engine needs a short amount of audio before producing output. The phase vocoder makes very slow playback smoother, but difficult material can still exhibit some frequency smearing. With pitch at 0 and speed at 100%, there is no added latency.
 
 ## Credits

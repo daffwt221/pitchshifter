@@ -1,0 +1,74 @@
+name: Validate and release
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Validate and package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Set artifact directory
+        run: echo "RELEASE_DIR=$RUNNER_TEMP/pitchshifter-release" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Check release rules
+        run: node --test .github/scripts/release.test.mjs
+      - name: Read version and changelog
+        run: node .github/scripts/release.mjs prepare
+      - name: Validate extension
+        run: npx --yes web-ext@10.6.0 lint --warnings-as-errors
+      - name: Build ZIP
+        run: npx --yes web-ext@10.6.0 build
+      - name: Verify packaged files
+        run: python3 .github/scripts/verify-package.py
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: release-package
+          path: ${{ env.RELEASE_DIR }}/
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Publish GitHub release
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Set artifact directory
+        run: echo "RELEASE_DIR=$RUNNER_TEMP/pitchshifter-release" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          name: release-package
+          path: ${{ env.RELEASE_DIR }}
+      - name: Create tag, attach ZIP and publish as Latest
+        run: node .github/scripts/release.mjs publish
+        env:
+          GH_TOKEN: ${{ github.token }}

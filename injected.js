@@ -205,7 +205,6 @@
   const reverbImpulseCache = new Map();
   const debugEvents = [];
   const mediaDebugIds = new WeakMap();
-  const wireSkipReasons = new WeakMap();
   let nextMediaDebugId = 1;
 
   // Native values are captured only for media controlled in this tab. Turning
@@ -464,7 +463,7 @@
           media: describeMedia(el),
         });
       }
-      applyControlledSpeed(el, shouldPreserveNativePitch(el));
+      applyControlledSpeed(el, nativeFallbackActive);
     }
     if (event.type !== "timeupdate" && needsProcessing() && !wired.has(el)) {
       queueMediaApply();
@@ -493,9 +492,7 @@
     queueMicrotask(() => {
       if (!enabled) return;
       if (needsShifter()) {
-        getMedia().forEach((el) =>
-          applyControlledSpeed(el, shouldPreserveNativePitch(el))
-        );
+        getMedia().forEach((el) => applyControlledSpeed(el, nativeFallbackActive));
       }
       queueMediaApply();
     });
@@ -541,12 +538,6 @@
     } catch (e) {}
   }
 
-  // Elements that stay outside Web Audio need the browser's native pitch
-  // preservation so changing Speed does not also change their pitch.
-  function shouldPreserveNativePitch(el) {
-    return nativeFallbackActive || !wired.has(el);
-  }
-
   // The browser changes playback speed; our SoundTouch node, not Firefox's
   // built-in algorithm, preserves the chosen audible pitch.
   function applySpeed() {
@@ -558,9 +549,7 @@
       restoreSpeed();
       return;
     }
-    getMedia().forEach((el) =>
-      applyControlledSpeed(el, shouldPreserveNativePitch(el))
-    );
+    getMedia().forEach((el) => applyControlledSpeed(el, false));
   }
 
   // If a browser cannot load the packaged worklet, keep Speed usable with its
@@ -915,52 +904,13 @@
 
   // Capture one element. A normal activation uses one wet branch; a temporary
   // second branch is only present while changing engines.
-  function getCaptureSkipReason(el) {
-    const sourceUrl =
-      el.currentSrc ||
-      el.getAttribute("src") ||
-      el.querySelector("source[src]")?.src ||
-      "";
-
-    // Wait until the media provider is known. Capturing an empty element now
-    // would still permanently route a later cross-origin source through Web
-    // Audio before we can inspect it.
-    if (!sourceUrl && !el.srcObject) return "source-not-selected";
-    if (!sourceUrl) return null; // MediaStream-backed elements are readable.
-
-    try {
-      const url = new URL(sourceUrl, location.href);
-      // Blob-backed media, including YouTube MSE streams, remains eligible for
-      // capture. Blocking all YouTube blobs disables every audio effect even
-      // when the stream can be processed normally.
-      if (url.protocol === "blob:" || url.protocol === "data:") return null;
-      if (
-        !el.hasAttribute("crossorigin") &&
-        url.origin !== location.origin
-      ) {
-        return "cors-unsafe";
-      }
-    } catch (e) {}
-
-    return null;
-  }
-
   function wire(el) {
     if (wired.has(el)) return wired.get(el);
-    const skipReason = getCaptureSkipReason(el);
-    if (skipReason) {
-      if (wireSkipReasons.get(el) !== skipReason) {
-        recordDebug(`wire-skipped-${skipReason}`, { media: describeMedia(el) });
-        wireSkipReasons.set(el, skipReason);
-      }
-      return null;
-    }
-    wireSkipReasons.delete(el);
     let source;
     try {
       source = ctx.createMediaElementSource(el);
     } catch (e) {
-      // A failed capture must leave this element on its native audio path.
+      // Already captured, or cross-origin without CORS.
       recordDebug("wire-failed", {
         media: describeMedia(el),
         name: e?.name,

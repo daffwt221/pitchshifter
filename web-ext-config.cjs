@@ -1,6 +1,8 @@
 // Keep dev-only files out of the packaged add-on.
 module.exports = {
   ignoreFiles: [
+    ".github",
+    "diagnostics",
     "store-listing.md",
     "screenshots",
     "web-ext-artifacts",
